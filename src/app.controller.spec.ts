@@ -15,8 +15,20 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return API info object', () => {
+      expect(appController.getApiInfo()).toMatchObject({
+        status: 'ok',
+        name: 'Urco API',
+        version: '1.0',
+        docs: '/api/docs',
+      });
+    });
+  });
+
+  describe('health', () => {
+    it('should return health status', () => {
+      expect(appController.getHealth()).toHaveProperty('status', 'ok');
+      expect(appController.getHealth()).toHaveProperty('timestamp');
     });
   });
 });

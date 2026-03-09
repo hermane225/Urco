@@ -7,6 +7,8 @@ import { BookingsModule } from './bookings/bookings.module';
 import { MessagesModule } from './messages/messages.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { PrismaModule } from './prisma/prisma.module';
     MessagesModule,
     AlertsModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
 
