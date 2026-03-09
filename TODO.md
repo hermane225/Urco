@@ -1,8 +1,7 @@
-# TODO - Fix build local puis Docker serveur IONOS
+# TODO - Port reliability fix (local + VPS)
 
-- [x] Analyser l'erreur de build local
-- [x] Proposer un plan de correction (tsconfig CommonJS)
-- [x] Modifier `tsconfig.json` (module/moduleResolution)
-- [ ] Relancer `npm run build` en local
-- [ ] Valider le build OK
-- [ ] Préparer étape Docker sur serveur IONOS
+- [ ] Update `src/main.ts` with robust port fallback when `EADDRINUSE`
+- [ ] Update `package.json` scripts with explicit production port helper
+- [ ] Update `deploy.sh` PM2 start logic to avoid duplicate running instance
+- [ ] Run build verification
+- [ ] Run runtime verification and curl checks

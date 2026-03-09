@@ -94,7 +94,8 @@ echo -e "${YELLOW}Step 15: Running database migrations...${NC}"
 npx prisma migrate deploy
 
 echo -e "${YELLOW}Step 16: Starting application with PM2...${NC}"
-PORT=$APP_PORT pm2 start dist/src/main.js --name urco-backend
+pm2 delete urco-backend 2>/dev/null || true
+PORT=$APP_PORT pm2 start dist/src/main.js --name urco-backend --update-env
 pm2 save
 
 echo -e "${YELLOW}Step 17: Configuring Nginx reverse proxy...${NC}"
