@@ -153,6 +153,15 @@ model Alert {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// Temporary storage for email verification codes before user creation
+model PendingEmailVerification {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
 model Payment {
   id              String   @id @default(uuid())
   bookingId       String   @unique

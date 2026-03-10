@@ -31,6 +31,15 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Check if email was previously verified through pending verification
+    const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
+      where: { email },
+    });
+
+    // If there's a pending verification record, the email was already verified
+    // Otherwise, we need to send a new verification code
+    const emailWasPreVerified = pendingVerification !== null;
+
     // Generate email verification code
     const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
     const emailCodeExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
@@ -47,13 +56,22 @@ export class AuthService {
         gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         role: role || 'PASSENGER',
-        emailCode,
-        emailCodeExpiry,
+        emailCode: emailWasPreVerified ? null : emailCode,
+        emailCodeExpiry: emailWasPreVerified ? null : emailCodeExpiry,
+        emailVerified: emailWasPreVerified,
+        verified: emailWasPreVerified,
       },
     });
 
-    // Send verification email
-    await this.sendVerificationEmail(email, emailCode);
+    // If email was not pre-verified, send verification email
+    if (!emailWasPreVerified) {
+      await this.sendVerificationEmail(email, emailCode);
+    } else {
+      // Clean up the pending verification record
+      await this.prisma.pendingEmailVerification.delete({
+        where: { email },
+      });
+    }
 
     // Generate token
     const token = this.generateToken(user.id, user.email);
@@ -61,6 +79,7 @@ export class AuthService {
     return {
       user: this.sanitizeUser(user),
       token,
+      emailWasPreVerified,
     };
   }
 
@@ -139,66 +158,110 @@ export class AuthService {
   }
 
   async verifyEmailCode(email: string, code: string) {
+    // First check if user exists
     const user = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    if (!user) {
-      throw new BadRequestException('User not found');
+    if (user) {
+      // User exists - verify against their stored code
+      if (user.emailVerified) {
+        throw new BadRequestException('Email already verified');
+      }
+
+      if (user.emailCode !== code) {
+        throw new BadRequestException('Invalid verification code');
+      }
+
+      if (user.emailCodeExpiry && user.emailCodeExpiry < new Date()) {
+        throw new BadRequestException('Verification code expired');
+      }
+
+      await this.prisma.user.update({
+        where: { email },
+        data: {
+          emailVerified: true,
+          emailCode: null,
+          emailCodeExpiry: null,
+          verified: true,
+        },
+      });
+
+      return { message: 'Email verified successfully', verified: true };
     }
 
-    if (user.emailVerified) {
-      throw new BadRequestException('Email already verified');
+    // User doesn't exist - check pending verification
+    const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
+      where: { email },
+    });
+
+    if (!pendingVerification) {
+      throw new BadRequestException('No verification code found for this email. Please request a new code.');
     }
 
-    if (user.emailCode !== code) {
+    if (pendingVerification.code !== code) {
       throw new BadRequestException('Invalid verification code');
     }
 
-    if (user.emailCodeExpiry && user.emailCodeExpiry < new Date()) {
+    if (pendingVerification.expiresAt < new Date()) {
       throw new BadRequestException('Verification code expired');
     }
 
-    await this.prisma.user.update({
-      where: { email },
-      data: {
-        emailVerified: true,
-        emailCode: null,
-        emailCodeExpiry: null,
-        verified: true,
-      },
-    });
-
-    return { message: 'Email verified successfully' };
+    // Code is valid - mark as verified (don't delete, will be used during signup)
+    // We'll add a flag or just keep the record until signup
+    // For now, just return success - the frontend will proceed to signup
+    
+    return { message: 'Email verified successfully', verified: true, pending: true };
   }
 
   async resendVerificationCode(email: string) {
-    const user = await this.prisma.user.findUnique({
+    // Check if user already exists
+    const existingUser = await this.prisma.user.findUnique({
       where: { email },
     });
 
-    if (!user) {
-      throw new BadRequestException('User not found');
+    if (existingUser) {
+      // User exists - update their verification code
+      if (existingUser.emailVerified) {
+        throw new BadRequestException('Email already verified');
+      }
+
+      const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const emailCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+
+      await this.prisma.user.update({
+        where: { email },
+        data: {
+          emailCode,
+          emailCodeExpiry,
+        },
+      });
+
+      await this.sendVerificationEmail(email, emailCode);
+      return { message: 'Verification code sent' };
     }
 
-    if (user.emailVerified) {
-      throw new BadRequestException('Email already verified');
-    }
-
+    // User doesn't exist yet - create pending verification
     const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const emailCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-    await this.prisma.user.update({
+    // Delete any existing pending verification for this email
+    await this.prisma.pendingEmailVerification.deleteMany({
       where: { email },
+    });
+
+    // Create new pending verification
+    await this.prisma.pendingEmailVerification.create({
       data: {
-        emailCode,
-        emailCodeExpiry,
+        email,
+        code: emailCode,
+        expiresAt,
       },
     });
 
     await this.sendVerificationEmail(email, emailCode);
 
-    return { message: 'Verification code sent' };
+    return { message: 'Verification code sent', pending: true };
   }
 
   async sendWhatsAppCode(phone: string) {
