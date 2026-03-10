@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 function parsePort(value: string | undefined, fallback: number): number {
@@ -26,7 +28,12 @@ async function listenWithFallback(app: any, initialPort: number, maxAttempts = 1
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Serve uploaded files as static assets
+  app.useStaticAssets(join(__dirname, '..', '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
 
   // Global prefix
   app.setGlobalPrefix('api/v1');
