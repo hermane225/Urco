@@ -47,10 +47,25 @@ export class RidesController {
     return this.ridesService.getRideSummary(rideId);
   }
 
-  @Get(':rideId')
+@Get(':rideId')
   async getRideById(@Param('rideId') rideId: string) {
     return this.ridesService.getRideById(rideId);
   }
+
+@Get('nearby')
+async getNearbyRides(
+  @Query('lat') lat: string,
+  @Query('lng') lng: string,
+  @Query('radius') radius: string = '50',
+  @Query('date') date?: string,
+) {
+  return this.ridesService.getNearbyRides(
+    parseFloat(lat),
+    parseFloat(lng),
+    parseFloat(radius),
+    date,
+  );
+}
 
   @Put(':rideId')
   @UseGuards(JwtAuthGuard)

@@ -17,8 +17,24 @@ export class CreateRideDto {
   @IsString()
   origin!: string;
 
-  @IsString()
+@IsString()
   destination!: string;
+
+  @IsOptional()
+  @IsNumber()
+  originLat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  originLng?: number;
+
+  @IsOptional()
+  @IsNumber()
+  destLat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  destLng?: number;
 
   @IsDateString()
   departureDate!: string;
@@ -53,9 +69,25 @@ export class UpdateRideDto {
   @IsString()
   origin?: string;
 
-  @IsOptional()
+@IsOptional()
   @IsString()
   destination?: string;
+
+  @IsOptional()
+  @IsNumber()
+  originLat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  originLng?: number;
+
+  @IsOptional()
+  @IsNumber()
+  destLat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  destLng?: number;
 
   @IsOptional()
   @IsDateString()

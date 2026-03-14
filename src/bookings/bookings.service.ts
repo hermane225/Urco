@@ -7,7 +7,7 @@ export class BookingsService {
   constructor(private prisma: PrismaService) {}
 
   async createBooking(rideId: string, userId: string, createBookingDto: CreateBookingDto) {
-    const { seats } = createBookingDto;
+  const { seats, passengerLat, passengerLng, message } = createBookingDto;
 
     // Get ride details
     const ride = await this.prisma.ride.findUnique({
@@ -49,6 +49,10 @@ export class BookingsService {
         passengerId: userId,
         seats,
         totalPrice,
+        passengerLat,
+        passengerLng,
+        message,
+        securityCode: Math.floor(1000 + Math.random() * 9000).toString(),
         status: 'PENDING',
       },
       include: {
@@ -202,31 +206,83 @@ export class BookingsService {
     });
   }
 
-  async getDriverBookings(userId: string) {
-    const rides = await this.prisma.ride.findMany({
-      where: { driverId: userId },
-      select: { id: true },
-    });
+async getDriverBookings(userId: string) {
+  const rides = await this.prisma.ride.findMany({
+    where: { driverId: userId },
+    select: { id: true },
+  });
 
-    const rideIds = rides.map((ride) => ride.id);
+  const rideIds = rides.map((ride) => ride.id);
 
-    return this.prisma.booking.findMany({
-      where: { rideId: { in: rideIds } },
-      include: {
-        ride: true,
-        passenger: {
-          select: {
-            id: true,
-            username: true,
-            firstName: true,
-            lastName: true,
-            avatar: true,
-            rating: true,
-          },
+  return this.prisma.booking.findMany({
+    where: { rideId: { in: rideIds } },
+    include: {
+      ride: true,
+      passenger: {
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          rating: true,
         },
       },
-      orderBy: { createdAt: 'desc' },
-    });
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async validateSecurityCode(bookingId: string, code: string) {
+  const booking = await this.prisma.booking.findUnique({
+    where: { id: bookingId },
+  });
+
+  if (!booking) {
+    throw new NotFoundException('Booking not found');
   }
+
+  if (booking.securityCode !== code) {
+    throw new BadRequestException('Invalid security code');
+  }
+
+  if (booking.codeValidated) {
+    throw new BadRequestException('Code already validated');
+  }
+
+  const updatedBooking = await this.prisma.booking.update({
+    where: { id: bookingId },
+    data: { codeValidated: true },
+    include: {
+      ride: true,
+      passenger: true,
+    },
+  });
+
+  return { message: 'Code validated', booking: updatedBooking };
+}
+
+async markDriverArrived(bookingId: string, userId: string) {
+  const booking = await this.prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: { ride: true },
+  });
+
+  if (!booking) {
+    throw new NotFoundException('Booking not found');
+  }
+
+  if (booking.ride.driverId !== userId) {
+    throw new BadRequestException('Only driver can mark arrival');
+  }
+
+  // Update booking status or add arrived field - here set to special status or notify
+  const updatedBooking = await this.prisma.booking.update({
+    where: { id: bookingId },
+    data: { status: 'DRIVER_ARRIVED' as any },
+  });
+
+  return { message: 'Driver marked as arrived', booking: updatedBooking };
+}
 }
 

@@ -1,8 +1,20 @@
 import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateBookingDto {
-  @IsNumber()
+@IsNumber()
   seats!: number;
+
+  @IsOptional()
+  @IsNumber()
+  passengerLat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  passengerLng?: number;
+
+  @IsOptional()
+  @IsString()
+  message?: string;
 }
 
 export class UpdateBookingDto {

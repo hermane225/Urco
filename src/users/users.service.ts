@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateProfileDto } from './dto/users.dto';
+import { UpdateProfileDto, VerifyUserDto } from './dto/users.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -146,6 +146,37 @@ export class UsersService {
     }
 
     return { path: user.avatar };
+  }
+
+  async verifyUser(userId: string, dto: VerifyUserDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const updateData: any = {
+      verified: dto.verified ?? true,
+    };
+
+    if (dto.idDocumentVerified !== undefined) {
+      updateData.idDocumentVerified = dto.idDocumentVerified;
+    }
+    if (dto.driverLicenseVerified !== undefined) {
+      updateData.driverLicenseVerified = dto.driverLicenseVerified;
+    }
+    if (dto.carInsuranceVerified !== undefined) {
+      updateData.carInsuranceVerified = dto.carInsuranceVerified;
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+
+    return this.sanitizeUser(updatedUser);
   }
 
   private sanitizeUser(user: any) {

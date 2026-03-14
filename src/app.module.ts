@@ -7,6 +7,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { MessagesModule } from './messages/messages.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { LocationsModule } from './locations/locations.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -22,6 +23,7 @@ import { AppService } from './app.service';
     BookingsModule,
     MessagesModule,
     AlertsModule,
+    LocationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

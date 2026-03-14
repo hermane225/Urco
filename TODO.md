@@ -1,7 +1,13 @@
-# TODO - Port reliability fix (local + VPS)
+# Fix npm run build (TS errors after deps fix)
 
-- [ ] Update `src/main.ts` with robust port fallback when `EADDRINUSE`
-- [ ] Update `package.json` scripts with explicit production port helper
-- [ ] Update `deploy.sh` PM2 start logic to avoid duplicate running instance
-- [ ] Run build verification
-- [ ] Run runtime verification and curl checks
+## Completed:
+- [x] Clean install deps (rxjs fixed)
+
+## Remaining:
+- [ ] Create src/locations/locations.module.ts
+- [ ] Fix locations.service.ts (Prisma query)
+- [ ] Fix bookings.controller.ts (DTO import)
+- [ ] Fix rides.service.ts (use Google Maps SDK)
+- [ ] Fix users.controller.ts (import + syntax)
+- [ ] Fix users.service.ts (remove duplicate import)
+- [ ] npx prisma generate && npm run build

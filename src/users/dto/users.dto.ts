@@ -46,3 +46,17 @@ export class UploadDocumentDto {
   documentType!: string;
 }
 
+export class VerifyUserDto {
+  @IsOptional()
+  idDocumentVerified?: boolean;
+
+  @IsOptional()
+  driverLicenseVerified?: boolean;
+
+  @IsOptional()
+  carInsuranceVerified?: boolean;
+
+  @IsOptional()
+  verified?: boolean;
+}
+

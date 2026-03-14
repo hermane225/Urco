@@ -1,5 +1,6 @@
 import {
   Controller,
+  BadRequestException,
   Get,
   Put,
   Post,
@@ -14,7 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { UsersService } from './users.service';
-import { UpdateProfileDto, UploadDocumentDto } from './dto/users.dto';
+import { UpdateProfileDto, UploadDocumentDto, VerifyUserDto } from './dto/users.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 
@@ -75,5 +76,17 @@ export class UsersController {
   async getUserAvatar(@Param('userId') userId: string) {
     return this.usersService.getUserAvatar(userId);
   }
-}
 
+  @Put(':userId/verify')
+  async verifyUser(
+    @Req() req: Request,
+    @Param('userId') userId: string,
+    @Body() dto: VerifyUserDto,
+  ) {
+    const currentUser = req.user as any;
+    if (!currentUser.isAdmin) {
+      throw new BadRequestException('Admin access required');
+    }
+    return this.usersService.verifyUser(userId, dto);
+  }
+}

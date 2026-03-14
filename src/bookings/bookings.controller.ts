@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/bookings.dto';
+import { ValidateBookingCodeDto } from './dto/validate-booking.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 
@@ -45,7 +46,7 @@ export class BookingsController {
     return this.bookingsService.getBookingById(bookingId);
   }
 
-  @Put('bookings/:bookingId/status')
+@Put('bookings/:bookingId/status')
   async updateBookingStatus(
     @Req() req: Request,
     @Param('bookingId') bookingId: string,
@@ -54,5 +55,23 @@ export class BookingsController {
     const user = req.user as any;
     return this.bookingsService.updateBookingStatus(bookingId, user.id, status);
   }
+
+@Post('bookings/:bookingId/validate-code')
+async validateCode(
+  @Param('bookingId') bookingId: string,
+  @Body() dto: ValidateBookingCodeDto,
+) {
+  return this.bookingsService.validateSecurityCode(bookingId, dto.code);
+}
+
+@Put('bookings/:bookingId/driver-arrived')
+@UseGuards(JwtAuthGuard)
+async markDriverArrived(
+  @Req() req: Request,
+  @Param('bookingId') bookingId: string,
+) {
+  const user = req.user as any;
+  return this.bookingsService.markDriverArrived(bookingId, user.id);
+}
 }
 

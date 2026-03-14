@@ -10,7 +10,12 @@ param(
     [string]$AppDir = "/var/www/urco-backend",
     [string]$Domain = "",
     [string]$SslEmail = "",
-    [bool]$UsePlesk = $true
+    [bool]$UsePlesk = $true,
+    [string]$SmtpUser = "",
+    [string]$SmtpPass = "",
+    [string]$SmtpHost = "smtp.gmail.com",
+    [string]$SmtpPort = "587",
+    [string]$SmtpFrom = ""
 )
 
 $ProjectDir = "c:\Users\hermane\mano\Urco\urco-backend"
@@ -18,6 +23,7 @@ $Archive = "$env:TEMP\urco-backend.tar.gz"
 $ScriptDir = "$env:TEMP\urco-scripts"
 $AppPort = "3002"
 $CorsOrigin = if ([string]::IsNullOrWhiteSpace($Domain)) { "*" } else { "https://$Domain" }
+$SmtpFromValue = if ([string]::IsNullOrWhiteSpace($SmtpFrom)) { "URCO <$SmtpUser>" } else { $SmtpFrom }
 $ShouldRunCertbot = (-not $UsePlesk) -and (-not [string]::IsNullOrWhiteSpace($SslEmail))
 $EffectiveSslEmail = $SslEmail
 
@@ -139,8 +145,16 @@ Write-BashScript "$ScriptDir\setup-env.sh" @(
     "  fi",
     "  echo 'PORT=$AppPort configure dans .env existant.'",
     "fi",
+    "# --- SMTP ---",
+    "if [ -n '$SmtpUser' ]; then",
+    "  for KEY in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_FROM; do",
+    "    sed -i \"/^\${KEY}=/d\" .env || true",
+    "  done",
+    "  printf 'SMTP_HOST=$SmtpHost\nSMTP_PORT=$SmtpPort\nSMTP_USER=$SmtpUser\nSMTP_PASS=$SmtpPass\nSMTP_FROM=${SmtpFromValue}\n' >> .env",
+    "  echo 'SMTP configure dans .env.'",
+    "fi",
     "echo '--- Contenu .env (sans secrets) ---'",
-    "grep -v 'SECRET\|PASSWORD\|DATABASE_URL' .env || true"
+    "grep -v 'SECRET\|PASS\|DATABASE_URL' .env || true"
 )
 
 # Script de migration
