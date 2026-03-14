@@ -11,21 +11,27 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 import { CreateLocationDto } from './dto/locations.dto';
 
-
 @Controller('locations')
-@UseGuards(JwtAuthGuard)
 export class LocationsController {
   constructor(private locationsService: LocationsService) {}
 
   @Post()
-  async updateLocation(@Req() req: Request, @Body() dto: CreateLocationDto) {
+  @UseGuards(JwtAuthGuard)
+  async updateLiveLocation(@Req() req: Request, @Body() dto: CreateLocationDto) {
     const user = req.user as any;
     return this.locationsService.updateLiveLocation(user.id, dto);
   }
 
-  @Get()
-  async getLocation(@Req() req: Request) {
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getMyLocation(@Req() req: Request) {
     const user = req.user as any;
     return this.locationsService.getLiveLocation(user.id);
   }
+
+  @Get()
+  async getAllActiveLocations() {
+    return this.locationsService.getAllActiveLiveLocations();
+  }
 }
+

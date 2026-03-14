@@ -6,7 +6,7 @@ import { CreateLocationDto } from './dto/locations.dto';
 export class LocationsService {
   constructor(private prisma: PrismaService) {}
 
-async updateLiveLocation(userId: string, dto: CreateLocationDto) {
+  async updateLiveLocation(userId: string, dto: CreateLocationDto) {
     const { lat, lng, bookingId } = dto;
 
     // Find existing or create new live location for user
@@ -38,10 +38,32 @@ async updateLiveLocation(userId: string, dto: CreateLocationDto) {
     return location;
   }
 
-async getLiveLocation(userId: string) {
+  async getLiveLocation(userId: string) {
     return this.prisma.liveLocation.findFirst({
       where: { userId },
       orderBy: { updatedAt: 'desc' }
+    });
+  }
+
+  async getAllActiveLiveLocations() {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    return this.prisma.liveLocation.findMany({
+      where: {
+        updatedAt: {
+          gt: oneHourAgo
+        }
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            rating: true
+          }
+        }
+      }
     });
   }
 }
