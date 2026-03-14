@@ -1,0 +1,1 @@
+# Build Fix TODO&#10;- [ ] 1. Edit src/payments/payments.service.ts to include payment in query&#10;- [ ] 2. npx prisma generate&#10;- [ ] 3. npm run build (verify no errors)&#10;- [ ] 4. npm run start:dev (optional test)

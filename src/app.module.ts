@@ -8,6 +8,7 @@ import { MessagesModule } from './messages/messages.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { LocationsModule } from './locations/locations.module';
+import { PaymentsModule } from './payments/payments.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -24,6 +25,7 @@ import { AppService } from './app.service';
     MessagesModule,
     AlertsModule,
     LocationsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

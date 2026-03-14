@@ -148,7 +148,7 @@ Write-BashScript "$ScriptDir\setup-env.sh" @(
     "# --- SMTP ---",
     "if [ -n '$SmtpUser' ]; then",
     "  for KEY in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_FROM; do",
-    "    sed -i \"/^\${KEY}=/d\" .env || true",
+"    sed -i '/^\${KEY}=/d' .env || true",
     "  done",
     "  printf 'SMTP_HOST=$SmtpHost\nSMTP_PORT=$SmtpPort\nSMTP_USER=$SmtpUser\nSMTP_PASS=$SmtpPass\nSMTP_FROM=${SmtpFromValue}\n' >> .env",
     "  echo 'SMTP configure dans .env.'",
