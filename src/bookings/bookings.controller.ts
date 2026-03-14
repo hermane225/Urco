@@ -14,7 +14,7 @@ import { ValidateBookingCodeDto } from './dto/validate-booking.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 
-@Controller()
+@Controller('bookings')
 @UseGuards(JwtAuthGuard)
 export class BookingsController {
   constructor(private bookingsService: BookingsService) {}

@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
 import { UsersService } from './users.service';
 import { UpdateProfileDto, UploadDocumentDto, VerifyUserDto } from './dto/users.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -40,7 +40,9 @@ export class UsersController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads',
+        destination: (req, file, cb) => {
+          cb(null, join(process.cwd(), 'uploads'));
+        },
         filename: (req, file, cb) => {
           const randomName = Array(32)
             .fill(null)
