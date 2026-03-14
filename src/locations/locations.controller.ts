@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   UseGuards,
@@ -10,6 +11,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 import { CreateLocationDto } from './dto/locations.dto';
 
+
 @Controller('locations')
 @UseGuards(JwtAuthGuard)
 export class LocationsController {
@@ -19,5 +21,11 @@ export class LocationsController {
   async updateLocation(@Req() req: Request, @Body() dto: CreateLocationDto) {
     const user = req.user as any;
     return this.locationsService.updateLiveLocation(user.id, dto);
+  }
+
+  @Get()
+  async getLocation(@Req() req: Request) {
+    const user = req.user as any;
+    return this.locationsService.getLiveLocation(user.id);
   }
 }
