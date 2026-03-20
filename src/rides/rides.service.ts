@@ -201,9 +201,19 @@ export class RidesService {
         vehicleColor: ride.vehicleColor,
         vehiclePlate: ride.vehiclePlate,
         status: ride.status,
+        driverId: ride.driver?.id,
+        driverName: ride.driver?.firstName + ' ' + ride.driver?.lastName,
+        driverPhone: ride.driver?.phone || null,
       },
-      driver: ride.driver,
-      bookings: {
+      bookings: ride.bookings.map((booking) => ({
+        id: booking.id,
+        passengerId: booking.passenger?.id,
+        passengerPhone: booking.passenger?.phone || null,
+        status: booking.status,
+        seats: booking.seats,
+        // ... autres champs à ajouter si besoin
+      })),
+      bookingsSummary: {
         total: ride.bookings.length,
         confirmed: confirmedBookings.length,
         totalSeatsBooked,
