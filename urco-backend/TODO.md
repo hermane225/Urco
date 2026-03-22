@@ -1,15 +1,35 @@
-# Fix npm run build (TS errors after deps fix)
+# Rides WebSocket Gateway & Driver Visibility - COMPLETED ✅
 
-## Completed:
-- [x] Clean install deps (rxjs fixed)
-- [x] Create src/locations/locations.module.ts 
-- [x] Fix locations.service.ts (Prisma query)
-- [ ] Fix bookings.controller.ts (DTO import)
+## Implemented Features:
+- **WebSocket Gateway** (`rides.gateway.ts`):
+  - `joinRideTracking`: Join ride room by rideId
+  - `driverLocationUpdate`: Broadcast driver GPS to passengers (lat/lng/accuracy/heading/speed)
+  - `passengerLocationUpdate`: Broadcast passenger GPS to all
+  - `driverArrivedAtPickup`: Arrival notification
+  - `rideStarted`: Start ride notification
+  - `rideCompleted`: End ride notification
+  - Room management, tracking service integration
 
-## Remaining:
-1. [x] Fix bookings.controller.ts: Add @Controller('bookings')
-2. [x] Fix rides.module.ts: Import ConfigModule for ConfigService in rides.service.ts
-3. [x] Fix users.controller.ts multer: Use process.cwd() for uploads destination
-4. [x] npx prisma generate &amp;&amp; npm run build
-5. [x] npm run start:dev to verify
-6. [x] Update TODO.md all complete
+- **REST Endpoints** (`rides.controller.ts`):
+  - `GET /rides/{rideId}/bookings`: Active bookings for driver (passenger details: name/avatar/phone/location, trip lat/lng, status)
+  - `GET /rides/{rideId}/bookings/{bookingId}/live`: Detailed live view (pickup/driver locations, security code status, full passenger/trip info)
+
+- **Service Logic** (`rides.service.ts`): Full implementations `getRideBookingsForDriver`, `getBookingLiveView`
+- **DTOs**: Phone, locations (lat/lng accuracy), tracking data included
+
+## Flux Yango 100% Ready:
+1. Driver: POST /rides → GET /rides/{rideId}/bookings → WS joinRideTracking → driverLocationUpdate loop
+2. Passenger: POST /bookings → WS joinRideTracking → passengerLocationUpdate
+3. Real-time: Mutual location sharing via WS events
+
+## Test Commands:
+```bash
+# E2E API + WS tests
+cd urco-backend && pwsh test/api-e2e-driver-passenger.ps1
+node test/ws-e2e-test.js
+
+# Live test: Run server and use TEST_COMPLETE_FLOW.rest or smoke-api.ps1
+npm run start:dev
+```
+
+**Status: 🚗 FULLY IMPLEMENTED & READY**

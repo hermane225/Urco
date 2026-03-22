@@ -55,7 +55,7 @@ export class PaymentsService {
     return payment;
   }
 
-  async getPaymentByBooking(bookingId: string) {
+async getPaymentByBooking(bookingId: string) {
     return this.prisma.payment.findUnique({
       where: { bookingId },
       include: { booking: true },
