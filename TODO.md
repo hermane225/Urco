@@ -1,8 +1,7 @@
-# TODO - Fix build local puis Docker serveur IONOS
+# Fix TypeScript Error: passenger.phone does not exist
 
-- [x] Analyser l'erreur de build local
-- [x] Proposer un plan de correction (tsconfig CommonJS)
-- [x] Modifier `tsconfig.json` (module/moduleResolution)
-- [ ] Relancer `npm run build` en local
-- [ ] Valider le build OK
-- [ ] Préparer étape Docker sur serveur IONOS
+## Steps:
+- [✅] 1. Run `npx prisma generate` in urco-backend/ to update Prisma Client types (adds phone to User)
+- [ ] 2. Verify build succeeds (`npm run build` in urco-backend/)
+- [ ] 3. Test the service if needed
+- [ ] 4. Complete task
