@@ -69,7 +69,9 @@ export class AuthService {
         gender,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         role: userRole,
-        roles: [userRole],
+        roles: {
+          set: [userRole]
+        },
         isAdmin: isAdminUser,
         avatar: avatarPath,
         emailCode: emailWasPreVerified ? null : emailCode,

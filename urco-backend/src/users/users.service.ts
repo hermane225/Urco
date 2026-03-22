@@ -184,7 +184,7 @@ export class UsersService {
   async enableDriverMode(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, roles: true, role: true },
+      select: { id: true, role: true, roles: true },
     });
 
     if (!user) {

@@ -64,7 +64,7 @@ export class RidesService {
     const createdRide = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: { roles: true },
+        select: { role: true, roles: true },
       });
 
       const nextRoles = new Set(user?.roles || []);
