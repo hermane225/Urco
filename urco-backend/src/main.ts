@@ -73,7 +73,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  const requestedPort = parsePort(process.env.PORT, 3000);
+  const requestedPort = parsePort(process.env.PORT, 3002);
   const activePort = await listenWithFallback(app, requestedPort, 10);
 
   if (activePort !== requestedPort) {
