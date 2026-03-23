@@ -1,1 +1,22 @@
-# Build Fix TODO&#10;- [ ] 1. Edit src/payments/payments.service.ts to include payment in query&#10;- [ ] 2. npx prisma generate&#10;- [ ] 3. npm run build (verify no errors)&#10;- [ ] 4. npm run start:dev (optional test)
+# Build Fix TODO
+
+## Status: In Progress
+
+**Step 1: [PENDING] Create TODO.md and start fixes**
+
+**Step 2: Fix auth.service.ts**
+- Replace 'baimport' with 'import'
+- Fix all PendingEmailVerification → pendingEmailVerification (6+ instances)
+- Remove embedded \\n from Prisma queries
+
+**Step 3: Fix locations.service.ts** 
+- Clean import statements (remove 'keackendkend' garbage)
+- Fix all LiveLocation → liveLocation (5+ instances)
+- Remove embedded \\n from Prisma queries
+- Ensure getAllActiveLiveLocations() works
+
+**Step 4: Test build**
+- cd Urco/urco-backend && npm run build
+
+**Step 5: Complete**
+
