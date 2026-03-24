@@ -12,7 +12,7 @@ export class LocationsService {
     // Find existing or create new live location for user
     let location = await this.prisma.liveLocation.findFirst({
       where: { userId },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: 'desc' },
     });
 
     if (location) {
@@ -41,7 +41,7 @@ export class LocationsService {
   async getLiveLocation(userId: string) {
     return this.prisma.liveLocation.findFirst({
       where: { userId },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: 'desc' },
     });
   }
 
@@ -50,8 +50,8 @@ export class LocationsService {
     return this.prisma.liveLocation.findMany({
       where: {
         updatedAt: {
-          gt: oneHourAgo
-        }
+          gt: oneHourAgo,
+        },
       },
       orderBy: { updatedAt: 'desc' },
       include: {
@@ -60,10 +60,10 @@ export class LocationsService {
             id: true,
             firstName: true,
             lastName: true,
-            rating: true
-          }
-        }
-      }
+            rating: true,
+          },
+        },
+      },
     });
   }
 }

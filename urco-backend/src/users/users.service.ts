@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateProfileDto, VerifyUserDto } from './dto/users.dto';
+import { RateDriverDto, UpdateProfileDto, VerifyUserDto } from './dto/users.dto';
 import { ListUsersQuery, UpdateUserRolesDto } from './dto/admin-users.dto';
 import { Prisma, UserRole } from '@prisma/client';
 import * as fs from 'fs';
@@ -206,6 +206,72 @@ export class UsersService {
     return {
       message: 'Mode chauffeur active sur ce compte',
       user: this.sanitizeUser(updated),
+    };
+  }
+
+  async rateDriver(driverId: string, passengerId: string, dto: RateDriverDto) {
+    // Vérifier booking complété pour ce passager/ride
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        rideId: dto.rideId,
+        passengerId,
+        status: 'COMPLETED'
+      }
+    });
+
+    if (!booking) {
+      throw new BadRequestException('Aucun booking complété trouvé pour ce trajet');
+    }
+
+    // Vérifier pas de notation existante
+    const existingRating = await this.prisma.rideEvent.findFirst({
+      where: {
+        rideId: dto.rideId,
+        type: 'RATING',
+        userId: passengerId
+      }
+    });
+
+    if (existingRating) {
+      throw new BadRequestException('Trajet déjà noté');
+    }
+
+    // Enregistrer événement notation
+    await this.prisma.rideEvent.create({
+      data: {
+        rideId: dto.rideId,
+        type: 'RATING',
+        userId: passengerId,
+        data: { rating: dto.rating },
+        description: `Notation ${dto.rating}/5`
+      }
+    });
+
+    // Mettre à jour moyenne du chauffeur
+    const driver = await this.prisma.user.findUnique({
+      where: { id: driverId },
+      select: { rating: true, ridesCompleted: true }
+    });
+
+    if (!driver) {
+      throw new NotFoundException('Chauffeur non trouvé');
+    }
+
+    const newRidesCompleted = driver.ridesCompleted + 1;
+    const newRating = (driver.rating * driver.ridesCompleted + dto.rating) / newRidesCompleted;
+
+    await this.prisma.user.update({
+      where: { id: driverId },
+      data: {
+        rating: newRating,
+        ridesCompleted: newRidesCompleted
+      }
+    });
+
+    return {
+      message: 'Chauffeur noté avec succès',
+      newRating,
+      ridesCompleted: newRidesCompleted
     };
   }
 

@@ -120,7 +120,7 @@ export class BookingsService {
     return booking;
   }
 
-  async getBookingById(bookingId: string) {
+  async getBookingById(bookingId: string, userId: string) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -154,7 +154,12 @@ export class BookingsService {
     if (!booking) {
       throw new NotFoundException('Booking not found');
     }
+    const isPassenger = booking.passenger?.id === userId;
+    const isDriver = booking.ride?.driver?.id === userId;
 
+    if (!isPassenger && !isDriver) {
+      throw new ForbiddenException('Not allowed to access this booking');
+    }
     return booking;
   }
 
@@ -187,7 +192,7 @@ export class BookingsService {
     }
 
     if (nextStatus === booking.status) {
-      return this.getBookingById(bookingId);
+      return this.getBookingById(bookingId, userId);
     }
 
     if (
@@ -313,6 +318,7 @@ export class BookingsService {
                 lastName: true,
                 avatar: true,
                 rating: true,
+                phone: true,
               },
             },
           },
@@ -342,6 +348,7 @@ export class BookingsService {
             lastName: true,
             avatar: true,
             rating: true,
+            phone: true,
           },
         },
       },
@@ -437,4 +444,5 @@ export class BookingsService {
     }
   }
 }
+
 

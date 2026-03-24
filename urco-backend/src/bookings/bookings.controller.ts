@@ -42,8 +42,9 @@ export class BookingsController {
   }
 
   @Get('bookings/:bookingId')
-  async getBookingById(@Param('bookingId') bookingId: string) {
-    return this.bookingsService.getBookingById(bookingId);
+  async getBookingById(@Req() req: Request, @Param('bookingId') bookingId: string) {
+    const user = req.user as any;
+    return this.bookingsService.getBookingById(bookingId, user.id);
   }
 
   @Put('bookings/:bookingId/status')

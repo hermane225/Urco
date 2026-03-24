@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, Min, Max } from 'class-validator';
 
 export enum Gender {
   MALE = 'MALE',
@@ -59,5 +59,15 @@ export class VerifyUserDto {
 
   @IsOptional()
   verified?: boolean;
+}
+
+export class RateDriverDto {
+  @IsString()
+  rideId: string;
+
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  rating: number;
 }
 

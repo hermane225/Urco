@@ -11,6 +11,7 @@ import { CreateRideDto, UpdateRideDto } from './dto/rides.dto';
 import { Client } from '@googlemaps/google-maps-services-js';
 import { RidesEventsService } from './rides-events.service';
 import { RidesTrackingService } from './rides-tracking.service';
+import { MessagesService } from '../messages/messages.service';
 
 @Injectable()
 export class RidesService {
@@ -19,6 +20,7 @@ export class RidesService {
     private configService: ConfigService,
     private ridesEventsService: RidesEventsService,
     private ridesTrackingService: RidesTrackingService,
+    private messagesService: MessagesService,
   ) {}
 
   private async reverseGeocode(lat: number, lng: number): Promise<string> {
@@ -430,6 +432,12 @@ export class RidesService {
         { bookingId: booking.id, code: securityCode },
         'Code de sécurité envoyé au passager'
       );
+
+      // Envoi du code dans le chat (message automatique)
+      // On cherche la conversation entre le chauffeur et le passager
+      let conversation = await this.messagesService.createConversation(driverId, booking.passengerId);
+      // Le chauffeur envoie le code au passager
+      await this.messagesService.createMessage(conversation.id, driverId, `Votre code de sécurité pour ce trajet est : ${securityCode}`);
     }
 
     return updatedRide;

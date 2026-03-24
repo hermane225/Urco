@@ -15,7 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { UsersService } from './users.service';
-import { UpdateProfileDto, UploadDocumentDto, VerifyUserDto } from './dto/users.dto';
+import { UpdateProfileDto, UploadDocumentDto, VerifyUserDto, RateDriverDto } from './dto/users.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 
@@ -78,6 +78,12 @@ export class UsersController {
   async enableDriverMode(@Req() req: Request) {
     const user = req.user as any;
     return this.usersService.enableDriverMode(user.id);
+  }
+
+  @Post(':driverId/rate')
+  async rateDriver(@Req() req: Request, @Param('driverId') driverId: string, @Body() dto: RateDriverDto) {
+    const passenger = req.user as any;
+    return this.usersService.rateDriver(driverId, passenger.id, dto);
   }
 
   @Get(':userId/avatar')
