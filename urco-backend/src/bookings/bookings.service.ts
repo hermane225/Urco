@@ -236,7 +236,10 @@ export class BookingsService {
     }
 
     const updatedBooking = await this.prisma.$transaction(async (tx) => {
+      let securityCode = booking.securityCode;
       if (nextStatus === BookingStatus.CONFIRMED) {
+        // Générer un nouveau code à 6 chiffres
+        securityCode = Math.floor(100000 + Math.random() * 900000).toString();
         const freshRide = await tx.ride.findUnique({
           where: { id: booking.rideId },
         });
@@ -266,9 +269,12 @@ export class BookingsService {
         });
       }
 
+      // Mettre à jour le code uniquement lors de la confirmation
       return tx.booking.update({
         where: { id: bookingId },
-        data: { status: nextStatus },
+        data: nextStatus === BookingStatus.CONFIRMED
+          ? { status: nextStatus, securityCode }
+          : { status: nextStatus },
         include: {
           ride: true,
           passenger: {
