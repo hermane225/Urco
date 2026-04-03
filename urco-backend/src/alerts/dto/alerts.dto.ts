@@ -1,4 +1,5 @@
-import { IsString, IsDateString, IsOptional } from 'class-validator';
+
+import { IsString, IsDateString, IsOptional, IsNumber } from 'class-validator';
 
 export class CreateAlertDto {
   @IsString()
@@ -9,6 +10,18 @@ export class CreateAlertDto {
 
   @IsDateString()
   desiredDate!: string;
+
+  @IsOptional()
+  @IsNumber()
+  desiredPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  departureLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  arrivalLocation?: string;
 }
 
 export class UpdateAlertDto {
@@ -23,6 +36,18 @@ export class UpdateAlertDto {
   @IsOptional()
   @IsDateString()
   desiredDate?: string;
+
+  @IsOptional()
+  @IsNumber()
+  desiredPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  departureLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  arrivalLocation?: string;
 
   @IsOptional()
   @IsString()

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
@@ -12,15 +13,19 @@ import { Client } from '@googlemaps/google-maps-services-js';
 import { RidesEventsService } from './rides-events.service';
 import { RidesTrackingService } from './rides-tracking.service';
 import { MessagesService } from '../messages/messages.service';
+import { AlertsService } from '../alerts/alerts.service';
 
 @Injectable()
 export class RidesService {
+  private readonly logger = new Logger(RidesService.name);
+
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
     private ridesEventsService: RidesEventsService,
     private ridesTrackingService: RidesTrackingService,
     private messagesService: MessagesService,
+    private alertsService: AlertsService,
   ) {}
 
   private async reverseGeocode(lat: number, lng: number): Promise<string> {
@@ -41,7 +46,14 @@ export class RidesService {
     return response.data.results[0].formatted_address;
   }
 
-  async createRide(userId: string, createRideDto: CreateRideDto) {
+  async createRide(
+    userId: string,
+    createRideDto: CreateRideDto,
+    files?: {
+      driverLicensePhoto?: Express.Multer.File[];
+      carInsurancePhoto?: Express.Multer.File[];
+    },
+  ) {
     const { departureDate, originLat, originLng, destLat, destLng, ...rest } =
       createRideDto;
 
@@ -53,7 +65,14 @@ export class RidesService {
       rest.destination = await this.reverseGeocode(destLat, destLng);
     }
 
-    const rideData = {
+    const driverLicensePhotoPath = files?.driverLicensePhoto?.[0]
+      ? `/uploads/${files.driverLicensePhoto[0].filename}`
+      : null;
+    const carInsurancePhotoPath = files?.carInsurancePhoto?.[0]
+      ? `/uploads/${files.carInsurancePhoto[0].filename}`
+      : null;
+
+    const rideData: any = {
       ...rest,
       originLat: originLat ?? null,
       originLng: originLng ?? null,
@@ -62,6 +81,14 @@ export class RidesService {
       departureDate: new Date(departureDate),
       driverId: userId,
     };
+
+    if (driverLicensePhotoPath) {
+      rideData.driverLicensePhoto = driverLicensePhotoPath;
+    }
+
+    if (carInsurancePhotoPath) {
+      rideData.carInsurancePhoto = carInsurancePhotoPath;
+    }
 
     const createdRide = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
@@ -77,6 +104,8 @@ export class RidesService {
         data: {
           role: UserRole.DRIVER,
           roles: { set: Array.from(nextRoles) },
+          driverLicense: driverLicensePhotoPath ?? undefined,
+          carInsurance: carInsurancePhotoPath ?? undefined,
         },
       });
 
@@ -98,7 +127,13 @@ export class RidesService {
       });
     });
 
-    return createdRide;
+    try {
+      await this.alertsService.notifyUsersForRideMatch(createdRide);
+    } catch (error) {
+      this.logger.error(`Unable to notify alert users for ride ${createdRide.id}`, error as any);
+    }
+
+    return this.withPublicMediaUrls(createdRide);
   }
 
   async getRides(filters?: {
@@ -129,7 +164,7 @@ export class RidesService {
       };
     }
 
-    return this.prisma.ride.findMany({
+    const rides = await this.prisma.ride.findMany({
       where,
       include: {
         driver: {
@@ -149,6 +184,8 @@ export class RidesService {
         departureDate: 'asc',
       },
     });
+
+    return rides.map((ride) => this.withPublicMediaUrls(ride));
   }
 
   async getNearbyRides(lat: number, lng: number, radiusKm: number = 50, date?: string) {
@@ -188,7 +225,7 @@ export class RidesService {
       return false;
     });
 
-    return nearbyRides;
+    return nearbyRides.map((ride) => this.withPublicMediaUrls(ride));
   }
 
   private haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -240,7 +277,7 @@ export class RidesService {
       throw new NotFoundException('Ride not found');
     }
 
-    return ride;
+    return this.withPublicMediaUrls(ride);
   }
 
   async updateRide(rideId: string, userId: string, updateRideDto: UpdateRideDto) {
@@ -258,7 +295,7 @@ export class RidesService {
 
   const { departureDate, ...rest } = updateRideDto; // now includes lat/lng
 
-    return this.prisma.ride.update({
+    const updatedRide = await this.prisma.ride.update({
       where: { id: rideId },
       data: {
         ...rest,
@@ -276,6 +313,8 @@ export class RidesService {
         },
       },
     });
+
+    return this.withPublicMediaUrls(updatedRide);
   }
 
   async deleteRide(rideId: string, userId: string) {
@@ -361,7 +400,10 @@ export class RidesService {
       },
     });
 
-    return bookings;
+    return bookings.map((booking) => ({
+      ...booking,
+      ride: this.withPublicMediaUrls(booking.ride),
+    }));
   }
 
   /**
@@ -650,6 +692,16 @@ export class RidesService {
       },
     });
 
+    const liveLocations = await this.prisma.liveLocation.findMany({
+      where: {
+        bookingId: {
+          in: bookings.map((booking) => booking.id),
+        },
+      },
+    });
+
+    const liveByBookingId = new Map(liveLocations.map((location) => [location.bookingId, location]));
+
     return {
       ride: {
         id: ride.id,
@@ -671,10 +723,20 @@ export class RidesService {
           lat: booking.passengerLat,
           lng: booking.passengerLng,
         },
+        liveLocation: liveByBookingId.get(booking.id)
+          ? {
+              lat: liveByBookingId.get(booking.id)?.lat,
+              lng: liveByBookingId.get(booking.id)?.lng,
+              updatedAt: liveByBookingId.get(booking.id)?.updatedAt,
+            }
+          : null,
         message: booking.message,
         status: booking.status,
         codeValidated: booking.codeValidated,
-        passenger: booking.passenger,
+        passenger: {
+          ...booking.passenger,
+          avatarUrl: this.toPublicFileUrl(booking.passenger.avatar),
+        },
       })),
     };
   }
@@ -724,11 +786,19 @@ export class RidesService {
       throw new BadRequestException('Ce booking n\'est plus actif');
     }
 
-    // Get the latest tracking for this passenger if available
-    const latestTracking = await this.prisma.rideTracking.findFirst({
+    const passengerLiveLocation = await this.prisma.liveLocation.findFirst({
+      where: {
+        bookingId,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    const latestDriverTracking = await this.prisma.rideTracking.findFirst({
       where: {
         rideId,
-        driverId, // Driver's location
+        driverId,
       },
       orderBy: {
         timestamp: 'desc',
@@ -758,21 +828,81 @@ export class RidesService {
         codeValidated: booking.codeValidated,
         securityCode: booking.codeValidated ? booking.securityCode : null,
       },
-      passenger: booking.passenger,
+      passengerLiveLocation: passengerLiveLocation
+        ? {
+            lat: passengerLiveLocation.lat,
+            lng: passengerLiveLocation.lng,
+            updatedAt: passengerLiveLocation.updatedAt,
+          }
+        : null,
+      driverLiveLocation: latestDriverTracking
+        ? {
+            lat: latestDriverTracking.driverLat,
+            lng: latestDriverTracking.driverLng,
+            accuracy: latestDriverTracking.accuracy,
+            heading: latestDriverTracking.heading,
+            speed: latestDriverTracking.speed,
+            updatedAt: latestDriverTracking.timestamp,
+          }
+        : null,
+      passenger: {
+        ...booking.passenger,
+        avatarUrl: this.toPublicFileUrl((booking.passenger as any)?.avatar),
+      },
       pickupLocation: {
         lat: booking.passengerLat,
         lng: booking.passengerLng,
         description: 'Localisation au moment de la réservation',
       },
-      driverCurrentLocation: latestTracking ? {
-        lat: latestTracking.driverLat,
-        lng: latestTracking.driverLng,
-        accuracy: latestTracking.accuracy,
-        heading: latestTracking.heading,
-        speed: latestTracking.speed,
-        timestamp: latestTracking.timestamp,
-      } : null,
     };
+  }
+
+  private toPublicFileUrl(filePath?: string | null) {
+    if (!filePath) {
+      return null;
+    }
+
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return filePath;
+    }
+
+    const baseUrl =
+      this.configService.get<string>('PUBLIC_BASE_URL') ||
+      `http://localhost:${this.configService.get<string>('PORT') || '3002'}`;
+
+    return `${baseUrl}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+  }
+
+  private withPublicMediaUrls<T extends any>(payload: T): T {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    const cloned: any = { ...payload };
+
+    if (cloned.driver) {
+      cloned.driver = {
+        ...cloned.driver,
+        avatarUrl: this.toPublicFileUrl(cloned.driver.avatar),
+      };
+    }
+
+    if (Array.isArray(cloned.bookings)) {
+      cloned.bookings = cloned.bookings.map((booking: any) => ({
+        ...booking,
+        passenger: booking.passenger
+          ? {
+              ...booking.passenger,
+              avatarUrl: this.toPublicFileUrl(booking.passenger.avatar),
+            }
+          : booking.passenger,
+      }));
+    }
+
+    cloned.driverLicensePhotoUrl = this.toPublicFileUrl(cloned.driverLicensePhoto);
+    cloned.carInsurancePhotoUrl = this.toPublicFileUrl(cloned.carInsurancePhoto);
+
+    return cloned as T;
   }
 }
 

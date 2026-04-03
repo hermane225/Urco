@@ -25,10 +25,9 @@ export class SignupDto {
   @IsString()
   lastName: string;
 
-  @ApiProperty({ example: '+1234567890', description: 'Phone number', required: false })
-  @IsOptional()
+  @ApiProperty({ example: '+1234567890', description: 'Phone number' })
   @IsString()
-  phone?: string;
+  phone: string;
 
   @ApiProperty({ enum: Gender, description: 'Gender', required: false })
   @IsOptional()
@@ -57,19 +56,40 @@ export class LoginDto {
 }
 
 export class SendCodeDto {
+  @ApiProperty({ example: '+221771234567', description: 'User phone number' })
+  @IsString()
+  phone: string;
+}
+
+export class VerifyCodeDto {
+  @ApiProperty({ example: '+221771234567', description: 'User phone number' })
+  @IsString()
+  phone: string;
+
+  @ApiProperty({ example: '123456', description: 'Verification code' })
+  @IsString()
+  code: string;
+}
+
+export class ForgotPasswordRequestDto {
   @ApiProperty({ example: 'john@example.com', description: 'User email' })
   @IsEmail()
   email: string;
 }
 
-export class VerifyCodeDto {
+export class ForgotPasswordResetDto {
   @ApiProperty({ example: 'john@example.com', description: 'User email' })
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: '123456', description: 'Verification code' })
+  @ApiProperty({ example: '123456', description: 'OTP code received by email' })
   @IsString()
   code: string;
+
+  @ApiProperty({ example: 'newSecurePassword123', description: 'New password' })
+  @IsString()
+  @MinLength(6)
+  newPassword: string;
 }
 
 export class SendWhatsAppCodeDto {

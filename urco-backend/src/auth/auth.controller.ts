@@ -5,7 +5,16 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import type { Response, Request } from 'express';
 import { AuthService } from './auth.service';
-import { SignupDto, LoginDto, SendCodeDto, VerifyCodeDto, SendWhatsAppCodeDto, VerifyWhatsAppCodeDto } from './dto/auth.dto';
+import {
+  SignupDto,
+  LoginDto,
+  SendCodeDto,
+  VerifyCodeDto,
+  SendWhatsAppCodeDto,
+  VerifyWhatsAppCodeDto,
+  ForgotPasswordRequestDto,
+  ForgotPasswordResetDto,
+} from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 
@@ -59,18 +68,32 @@ export class AuthController {
   }
 
   @Post('send-code')
-  @ApiOperation({ summary: 'Resend verification code' })
+  @ApiOperation({ summary: 'Send SMS verification code' })
   @ApiResponse({ status: 200, description: 'Verification code sent' })
   async sendCode(@Body() sendCodeDto: SendCodeDto) {
-    return this.authService.resendVerificationCode(sendCodeDto.email);
+    return this.authService.resendVerificationCode(sendCodeDto.phone);
   }
 
   @Post('verify-code')
-  @ApiOperation({ summary: 'Verify email code' })
-  @ApiResponse({ status: 200, description: 'Email verified successfully' })
+  @ApiOperation({ summary: 'Verify SMS code' })
+  @ApiResponse({ status: 200, description: 'Phone verified successfully' })
   @ApiResponse({ status: 400, description: 'Invalid code' })
   async verifyCode(@Body() verifyCodeDto: VerifyCodeDto) {
-    return this.authService.verifyEmailCode(verifyCodeDto.email, verifyCodeDto.code);
+    return this.authService.verifyPhoneCode(verifyCodeDto.phone, verifyCodeDto.code);
+  }
+
+  @Post('forgot-password/request-otp')
+  @ApiOperation({ summary: 'Send password reset OTP by email' })
+  @ApiResponse({ status: 200, description: 'Reset OTP sent' })
+  async requestForgotPasswordOtp(@Body() dto: ForgotPasswordRequestDto) {
+    return this.authService.requestPasswordResetOtp(dto.email);
+  }
+
+  @Post('forgot-password/reset')
+  @ApiOperation({ summary: 'Reset password using email OTP' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  async resetForgotPassword(@Body() dto: ForgotPasswordResetDto) {
+    return this.authService.resetPasswordWithOtp(dto.email, dto.code, dto.newPassword);
   }
 
   @Post('verify-phone/send')

@@ -74,6 +74,21 @@ export class UsersController {
     return this.usersService.getPhoto(user.id, type);
   }
 
+  @Get(':userId/photos')
+  async getUserPhotosForAdmin(@Req() req: Request, @Param('userId') userId: string) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.usersService.getPhotos(userId);
+  }
+
   @Post('profile/enable-driver')
   async enableDriverMode(@Req() req: Request) {
     const user = req.user as any;

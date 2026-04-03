@@ -93,10 +93,15 @@ export class UsersService {
 
     return {
       avatar: user.avatar,
+      avatarUrl: this.toPublicFileUrl(user.avatar),
       selfiePhoto: user.selfiePhoto,
+      selfiePhotoUrl: this.toPublicFileUrl(user.selfiePhoto),
       idDocumentPhoto: user.idDocumentPhoto,
+      idDocumentPhotoUrl: this.toPublicFileUrl(user.idDocumentPhoto),
       driverLicense: user.driverLicense,
+      driverLicenseUrl: this.toPublicFileUrl(user.driverLicense),
       carInsurance: user.carInsurance,
+      carInsuranceUrl: this.toPublicFileUrl(user.carInsurance),
     };
   }
 
@@ -135,7 +140,10 @@ export class UsersService {
       throw new NotFoundException('Photo not found');
     }
 
-    return { path: photoPath };
+    return {
+      path: photoPath,
+      url: this.toPublicFileUrl(photoPath),
+    };
   }
 
   async getUserAvatar(userId: string) {
@@ -147,7 +155,10 @@ export class UsersService {
       throw new NotFoundException('Avatar not found');
     }
 
-    return { path: user.avatar };
+    return {
+      path: user.avatar,
+      url: this.toPublicFileUrl(user.avatar),
+    };
   }
 
   async verifyUser(userId: string, dto: VerifyUserDto) {
@@ -277,7 +288,30 @@ export class UsersService {
 
   private sanitizeUser(user: any) {
     const { password, emailCode, emailCodeExpiry, whatsappCode, whatsappCodeExpiry, ...result } = user;
-    return result;
+    return {
+      ...result,
+      avatarUrl: this.toPublicFileUrl(result.avatar),
+      selfiePhotoUrl: this.toPublicFileUrl(result.selfiePhoto),
+      idDocumentPhotoUrl: this.toPublicFileUrl(result.idDocumentPhoto),
+      driverLicenseUrl: this.toPublicFileUrl(result.driverLicense),
+      carInsuranceUrl: this.toPublicFileUrl(result.carInsurance),
+    };
+  }
+
+  private toPublicFileUrl(filePath?: string | null) {
+    if (!filePath) {
+      return null;
+    }
+
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      return filePath;
+    }
+
+    const baseUrl =
+      this.configService.get<string>('PUBLIC_BASE_URL') ||
+      `http://localhost:${this.configService.get<string>('PORT') || '3002'}`;
+
+    return `${baseUrl}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
   }
 }
 

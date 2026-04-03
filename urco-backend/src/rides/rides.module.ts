@@ -6,12 +6,13 @@ import { RidesTrackingService } from './rides-tracking.service';
 import { RidesGateway } from './rides.gateway';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
-import { MessagesService } from '../messages/messages.service';
+import { MessagesModule } from '../messages/messages.module';
+import { AlertsModule } from '../alerts/alerts.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, MessagesModule, AlertsModule],
   controllers: [RidesController],
-  providers: [RidesService, RidesEventsService, RidesTrackingService, RidesGateway, MessagesService],
+  providers: [RidesService, RidesEventsService, RidesTrackingService, RidesGateway],
   exports: [RidesService, RidesEventsService, RidesTrackingService],
 })
 export class RidesModule {}

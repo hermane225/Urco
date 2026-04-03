@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { RidesTrackingService } from './rides-tracking.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @WebSocketGateway({
   cors: {
@@ -22,8 +23,19 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(RidesGateway.name);
   private activeRides = new Map<string, Set<string>>();
+  private clientUsers = new Map<string, string>();
 
-  constructor(private ridesTrackingService: RidesTrackingService) {}
+  private readonly activeBookingStatuses = [
+    'CONFIRMED',
+    'CODE_SENT',
+    'CODE_VERIFIED',
+    'RIDE_IN_PROGRESS',
+  ] as const;
+
+  constructor(
+    private ridesTrackingService: RidesTrackingService,
+    private prisma: PrismaService,
+  ) {}
 
   async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
@@ -31,10 +43,14 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+    const disconnectedUserId = this.clientUsers.get(client.id);
     // Leave all ride rooms
     this.activeRides.forEach((clients) => {
-      clients.delete(client.id);
+      if (disconnectedUserId) {
+        clients.delete(disconnectedUserId);
+      }
     });
+    this.clientUsers.delete(client.id);
   }
 
   /**
@@ -57,6 +73,14 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (clients) {
       clients.add(userId);
     }
+    this.clientUsers.set(client.id, userId);
+
+    const passengersSnapshot = await this.getRidePassengersSnapshot(rideId);
+    client.emit('ridePassengersSnapshot', {
+      rideId,
+      passengers: passengersSnapshot,
+      timestamp: new Date(),
+    });
 
     this.logger.log(`User ${userId} joined ride tracking for ${rideId}`);
     return { event: 'joinedRideTracking', data: { rideId } };
@@ -134,8 +158,8 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   /**
-   * Passenger sends real-time location during ride
-   * Broadcasts to driver only
+  * Passenger sends real-time location during ride
+  * Broadcasts to all participants in the ride room
    */
   @SubscribeMessage('passengerLocationUpdate')
   async handlePassengerLocationUpdate(
@@ -152,11 +176,41 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { rideId, passengerId, bookingId, lat, lng, accuracy } = data;
     const room = `ride-${rideId}`;
 
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: { passengerId: true },
+      });
+
+      if (booking) {
+        await this.prisma.liveLocation.upsert({
+          where: { bookingId },
+          update: {
+            userId: booking.passengerId,
+            lat,
+            lng,
+          },
+          create: {
+            userId: booking.passengerId,
+            bookingId,
+            lat,
+            lng,
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Unable to persist passenger location for booking ${bookingId}: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+
     // Broadcast to all in ride (driver + other passengers)
     this.server.to(room).emit('passengerLocationUpdate', {
       rideId,
       passengerId,
       bookingId,
+      lat,
+      lng,
       location: {
         lat,
         lng,
@@ -169,6 +223,58 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `Passenger ${passengerId} sent location for ride ${rideId}`,
     );
     return { event: 'passengerLocationSaved' };
+  }
+
+  private async getRidePassengersSnapshot(rideId: string) {
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        rideId,
+        status: { in: [...this.activeBookingStatuses] as any },
+      },
+      select: {
+        id: true,
+        passengerId: true,
+        passengerLat: true,
+        passengerLng: true,
+      },
+    });
+
+    const liveLocations = await this.prisma.liveLocation.findMany({
+      where: {
+        bookingId: {
+          in: bookings.map((booking) => booking.id),
+        },
+      },
+      select: {
+        bookingId: true,
+        lat: true,
+        lng: true,
+        updatedAt: true,
+      },
+    });
+
+    const liveByBookingId = new Map(
+      liveLocations.map((location) => [location.bookingId, location]),
+    );
+
+    return bookings.map((booking) => {
+      const live = liveByBookingId.get(booking.id);
+      return {
+        bookingId: booking.id,
+        passengerId: booking.passengerId,
+        pickupLocation: {
+          lat: booking.passengerLat,
+          lng: booking.passengerLng,
+        },
+        liveLocation: live
+          ? {
+              lat: live.lat,
+              lng: live.lng,
+              updatedAt: live.updatedAt,
+            }
+          : null,
+      };
+    });
   }
 
   /**

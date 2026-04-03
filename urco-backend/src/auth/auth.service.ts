@@ -1,13 +1,16 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as nodemailer from 'nodemailer';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto, LoginDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -30,32 +33,36 @@ export class AuthService {
     const isAdminUser = String(userRole) === 'ADMIN';
     const avatarPath = file ? `/uploads/${file.filename}` : null;
 
+    if (!phone) {
+      throw new BadRequestException('Phone number is required for registration');
+    }
+
     // Check if user exists
     const existingUser = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email }, { username }],
+        OR: [{ email }, { username }, { phone }],
       },
     });
 
     if (existingUser) {
-      throw new BadRequestException('Email or username already exists');
+      throw new BadRequestException('Email, username or phone already exists');
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Check if email was previously verified through pending verification
+    // Check if phone was previously verified through pending OTP verification
     const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
-      where: { email },
+      where: { email: phone },
     });
 
-    // If there's a pending verification record, the email was already verified
-    // Otherwise, we need to send a new verification code
-    const emailWasPreVerified = pendingVerification !== null;
-
-    // Generate email verification code
-    const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const emailCodeExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    if (
+      !pendingVerification ||
+      !pendingVerification.verified ||
+      pendingVerification.expiresAt < new Date()
+    ) {
+      throw new BadRequestException('Phone number not verified. Please verify OTP before signup.');
+    }
 
     // Create user
     const user = await this.prisma.user.create({
@@ -74,22 +81,16 @@ export class AuthService {
         },
         isAdmin: isAdminUser,
         avatar: avatarPath,
-        emailCode: emailWasPreVerified ? null : emailCode,
-        emailCodeExpiry: emailWasPreVerified ? null : emailCodeExpiry,
-        emailVerified: emailWasPreVerified,
-        verified: emailWasPreVerified,
+        whatsappVerified: true,
+        emailVerified: true,
+        verified: true,
       },
     });
 
-    // If email was not pre-verified, send verification email
-    if (!emailWasPreVerified) {
-      await this.sendVerificationEmail(email, emailCode);
-    } else {
-      // Clean up the pending verification record
-      await this.prisma.pendingEmailVerification.delete({
-        where: { email },
-      });
-    }
+    // Clean up pending phone verification record used during signup OTP flow
+    await this.prisma.pendingEmailVerification.delete({
+      where: { email: phone },
+    });
 
     // Generate token
     const token = this.generateToken(user.id, user.email);
@@ -97,7 +98,7 @@ export class AuthService {
     return {
       user: this.sanitizeUser(user),
       token,
-      emailWasPreVerified,
+      phoneWasPreVerified: true,
     };
   }
 
@@ -175,46 +176,39 @@ export class AuthService {
     }
   }
 
-  async verifyEmailCode(email: string, code: string) {
-    // First check if user exists
-    const user = await this.prisma.user.findUnique({
-      where: { email },
+  async verifyPhoneCode(phone: string, code: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { phone },
     });
 
     if (user) {
-      // User exists - verify against their stored code
-      if (user.emailVerified) {
-        throw new BadRequestException('Email already verified');
-      }
-
-      if (user.emailCode !== code) {
+      if (user.whatsappCode !== code) {
         throw new BadRequestException('Invalid verification code');
       }
 
-      if (user.emailCodeExpiry && user.emailCodeExpiry < new Date()) {
+      if (user.whatsappCodeExpiry && user.whatsappCodeExpiry < new Date()) {
         throw new BadRequestException('Verification code expired');
       }
 
       await this.prisma.user.update({
-        where: { email },
+        where: { id: user.id },
         data: {
-          emailVerified: true,
-          emailCode: null,
-          emailCodeExpiry: null,
+          whatsappVerified: true,
+          whatsappCode: null,
+          whatsappCodeExpiry: null,
           verified: true,
         },
       });
 
-      return { message: 'Email verified successfully', verified: true };
+      return { message: 'Phone verified successfully', verified: true };
     }
 
-    // User doesn't exist - check pending verification
     const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
-      where: { email },
+      where: { email: phone },
     });
 
     if (!pendingVerification) {
-      throw new BadRequestException('No verification code found for this email. Please request a new code.');
+      throw new BadRequestException('No verification code found for this phone number. Please request a new code.');
     }
 
     if (pendingVerification.code !== code) {
@@ -225,61 +219,57 @@ export class AuthService {
       throw new BadRequestException('Verification code expired');
     }
 
-    // Code is valid - mark as verified (don't delete, will be used during signup)
-    // We'll add a flag or just keep the record until signup
-    // For now, just return success - the frontend will proceed to signup
-    
-    return { message: 'Email verified successfully', verified: true, pending: true };
-  }
-
-  async resendVerificationCode(email: string) {
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingUser) {
-      // User exists - update their verification code
-      if (existingUser.emailVerified) {
-        throw new BadRequestException('Email already verified');
-      }
-
-      const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const emailCodeExpiry = new Date(Date.now() + 15 * 60 * 1000);
-
-      await this.prisma.user.update({
-        where: { email },
-        data: {
-          emailCode,
-          emailCodeExpiry,
-        },
-      });
-
-      await this.sendVerificationEmail(email, emailCode);
-      return { message: 'Verification code sent' };
-    }
-
-    // User doesn't exist yet - create pending verification
-    const emailCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-    // Delete any existing pending verification for this email
-    await this.prisma.pendingEmailVerification.deleteMany({
-      where: { email },
-    });
-
-    // Create new pending verification
-    await this.prisma.pendingEmailVerification.create({
+    await this.prisma.pendingEmailVerification.update({
+      where: { email: phone },
       data: {
-        email,
-        code: emailCode,
-        expiresAt,
+        verified: true,
       },
     });
 
-    await this.sendVerificationEmail(email, emailCode);
+    return {
+      message: 'Phone verified successfully',
+      verified: true,
+      pending: true,
+      canContinue: true,
+    };
+  }
 
-    return { message: 'Verification code sent', pending: true };
+  async resendVerificationCode(phone: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { phone },
+    });
+
+    const otp = this.generateOtpCode();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+    if (user) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          whatsappCode: otp,
+          whatsappCodeExpiry: expiry,
+        },
+      });
+    } else {
+      await this.prisma.pendingEmailVerification.upsert({
+        where: { email: phone },
+        update: {
+          code: otp,
+          verified: false,
+          expiresAt: expiry,
+        },
+        create: {
+          email: phone,
+          code: otp,
+          verified: false,
+          expiresAt: expiry,
+        },
+      });
+    }
+
+    await this.sendSmsOtp(phone, `URCO: votre code de verification est ${otp}. Expire dans 15 minutes.`);
+
+    return { message: 'Verification code sent by SMS', pending: !user };
   }
 
   async sendWhatsAppCode(phone: string) {
@@ -302,10 +292,65 @@ export class AuthService {
       },
     });
 
-    // In production, integrate with WhatsApp API (Twilio, etc.)
-    console.log(`WhatsApp verification code for ${phone}: ${whatsappCode}`);
+    await this.sendSmsOtp(phone, `URCO: votre code OTP est ${whatsappCode}. Expire dans 15 minutes.`);
 
-    return { message: 'WhatsApp code sent' };
+    return { message: 'OTP code sent by SMS' };
+  }
+
+  async requestPasswordResetOtp(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found with this email');
+    }
+
+    const otp = this.generateOtpCode();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailCode: otp,
+        emailCodeExpiry: expiry,
+      },
+    });
+
+    await this.sendPasswordResetEmail(email, otp);
+
+    return { message: 'Password reset OTP sent by email' };
+  }
+
+  async resetPasswordWithOtp(email: string, code: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User not found with this email');
+    }
+
+    if (user.emailCode !== code) {
+      throw new BadRequestException('Invalid OTP code');
+    }
+
+    if (user.emailCodeExpiry && user.emailCodeExpiry < new Date()) {
+      throw new BadRequestException('OTP code expired');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        emailCode: null,
+        emailCodeExpiry: null,
+      },
+    });
+
+    return { message: 'Password reset successfully' };
   }
 
   async verifyWhatsAppCode(phone: string, code: string) {
@@ -356,6 +401,114 @@ export class AuthService {
 
   private generateToken(userId: string, email: string): string {
     return this.jwtService.sign({ sub: userId, email });
+  }
+
+  private generateOtpCode() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private async sendSmsOtp(phone: string, content: string) {
+    const user = this.configService.get<string>('SYMTEL_USER');
+    const password = this.configService.get<string>('SYMTEL_PASSWORD');
+    const title = this.configService.get<string>('SYMTEL_TITLE') || 'URCO';
+
+    if (!user || !password) {
+      this.logger.error('SYMTEL credentials are not configured');
+      throw new BadRequestException('SMS provider is not configured');
+    }
+
+    const md5Password = createHash('md5').update(password).digest('hex');
+    const payload = {
+      user,
+      code: md5Password,
+      title,
+      phone,
+      content,
+    };
+
+    const getParams = new URLSearchParams({
+      mod: 'cgibin',
+      page: '2',
+      ...payload,
+    });
+
+    const getUrl = `https://www.symtel.biz/fr/index.php?${getParams.toString()}`;
+    const postUrl = 'https://www.symtel.biz/fr/index.php?mod=cgibin&page=2';
+
+    const getResponse = await fetch(getUrl, {
+      method: 'GET',
+    });
+    const getText = await getResponse.text();
+
+    if (getResponse.ok) {
+      this.logger.log(`SMS OTP sent to ${phone} via SYMTEL GET`);
+      return;
+    }
+
+    this.logger.warn(
+      `SYMTEL GET failed (${getResponse.status}). Falling back to POST. Response: ${getText}`,
+    );
+
+    const postBody = new URLSearchParams(payload);
+    const postResponse = await fetch(postUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: postBody.toString(),
+    });
+    const postText = await postResponse.text();
+
+    if (!postResponse.ok) {
+      this.logger.error(`SYMTEL SMS error (${postResponse.status}): ${postText}`);
+      throw new BadRequestException('Unable to send SMS OTP');
+    }
+
+    this.logger.log(`SMS OTP sent to ${phone} via SYMTEL POST`);
+  }
+
+  private async sendPasswordResetEmail(email: string, code: string) {
+    try {
+      const smtpHost = this.configService.get('SMTP_HOST');
+      const smtpPort = this.configService.get('SMTP_PORT');
+      const smtpUser = this.configService.get('SMTP_USER');
+      const smtpPass = this.configService.get('SMTP_PASS');
+      const smtpFrom = this.configService.get('SMTP_FROM') || 'URCO <noreply@urco.com>';
+
+      if (!smtpHost || !smtpPort || !smtpUser || !smtpPass) {
+        this.logger.error('SMTP credentials not configured');
+        throw new BadRequestException('Email provider is not configured');
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort, 10),
+        secure: parseInt(smtpPort, 10) === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      await transporter.sendMail({
+        from: smtpFrom,
+        to: email,
+        subject: 'URCO - Code de reinitialisation du mot de passe',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333;">URCO - Mot de passe oublie</h2>
+            <p>Votre code OTP est :</p>
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 24px; font-weight: bold; text-align: center; letter-spacing: 5px; margin: 20px 0;">
+              ${code}
+            </div>
+            <p style="color: #666; font-size: 14px;">Ce code expire dans 15 minutes.</p>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send password reset email', error as any);
+      throw new BadRequestException('Unable to send reset OTP by email');
+    }
   }
 
   private sanitizeUser(user: any) {

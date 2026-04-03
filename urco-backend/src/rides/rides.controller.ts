@@ -10,7 +10,12 @@ import {
   Query,
   UseGuards,
   Req,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
 import { RidesService } from './rides.service';
 import { CreateRideDto, UpdateRideDto } from './dto/rides.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,9 +33,39 @@ export class RidesController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  async createRide(@Req() req: Request, @Body() createRideDto: CreateRideDto) {
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'driverLicensePhoto', maxCount: 1 },
+        { name: 'carInsurancePhoto', maxCount: 1 },
+      ],
+      {
+        storage: diskStorage({
+          destination: (req, file, cb) => {
+            cb(null, join(process.cwd(), 'uploads'));
+          },
+          filename: (req, file, cb) => {
+            const randomName = Array(32)
+              .fill(null)
+              .map(() => Math.round(Math.random() * 16).toString(16))
+              .join('');
+            cb(null, `${randomName}${extname(file.originalname)}`);
+          },
+        }),
+      },
+    ),
+  )
+  async createRide(
+    @Req() req: Request,
+    @Body() createRideDto: CreateRideDto,
+    @UploadedFiles()
+    files?: {
+      driverLicensePhoto?: Express.Multer.File[];
+      carInsurancePhoto?: Express.Multer.File[];
+    },
+  ) {
     const user = req.user as any;
-    return this.ridesService.createRide(user.id, createRideDto);
+    return this.ridesService.createRide(user.id, createRideDto, files);
   }
 
   @Get()
