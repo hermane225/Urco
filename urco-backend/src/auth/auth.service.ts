@@ -431,6 +431,35 @@ export class AuthService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  private normalizePhoneForSms(inputPhone: string): string {
+    const raw = (inputPhone || '').trim();
+
+    if (!raw) {
+      throw new BadRequestException('Phone number is required');
+    }
+
+    if (raw.startsWith('+')) {
+      return raw;
+    }
+
+    if (raw.startsWith('00')) {
+      return `+${raw.slice(2)}`;
+    }
+
+    const digits = raw.replace(/\D/g, '');
+
+    // Accept local Ivory Coast format (10 digits starting by 0) and convert to international.
+    if (digits.length === 10 && digits.startsWith('0')) {
+      return `+225${digits.slice(1)}`;
+    }
+
+    if (digits.length >= 8) {
+      return `+${digits}`;
+    }
+
+    throw new BadRequestException('Invalid phone number format');
+  }
+
   private async sendSmsOtp(phone: string, content: string) {
     const user = this.configService.get<string>('SYMTEL_USER');
     const password = this.configService.get<string>('SYMTEL_PASSWORD');
@@ -441,12 +470,14 @@ export class AuthService {
       throw new BadRequestException('SMS provider is not configured');
     }
 
+    const normalizedPhone = this.normalizePhoneForSms(phone);
+
     const md5Password = createHash('md5').update(password).digest('hex');
     const payload = {
       user,
       code: md5Password,
       title,
-      phone,
+      phone: normalizedPhone,
       content,
     };
 
@@ -466,7 +497,7 @@ export class AuthService {
       const getText = await getResponse.text();
 
       if (getResponse.ok) {
-        this.logger.log(`SMS OTP sent to ${phone} via SYMTEL GET`);
+        this.logger.log(`SYMTEL GET accepted SMS for ${normalizedPhone}. Response: ${getText}`);
         return;
       }
 
@@ -489,13 +520,16 @@ export class AuthService {
         throw new BadRequestException('Unable to send SMS OTP');
       }
 
-      this.logger.log(`SMS OTP sent to ${phone} via SYMTEL POST`);
+      this.logger.log(`SYMTEL POST accepted SMS for ${normalizedPhone}. Response: ${postText}`);
     } catch (error: any) {
       if (error instanceof HttpException) {
         throw error;
       }
 
-      this.logger.error(`SYMTEL transport error while sending OTP to ${phone}`, error?.stack || String(error));
+      this.logger.error(
+        `SYMTEL transport error while sending OTP to ${normalizedPhone}`,
+        error?.stack || String(error),
+      );
       throw new BadGatewayException('SMS gateway is unreachable from server');
     }
   }
