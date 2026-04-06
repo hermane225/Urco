@@ -1,4 +1,11 @@
-import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  BadGatewayException,
+  Logger,
+  HttpException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -235,41 +242,58 @@ export class AuthService {
   }
 
   async resendVerificationCode(phone: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { phone },
-    });
-
-    const otp = this.generateOtpCode();
-    const expiry = new Date(Date.now() + 15 * 60 * 1000);
-
-    if (user) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          whatsappCode: otp,
-          whatsappCodeExpiry: expiry,
-        },
+    try {
+      const user = await this.prisma.user.findFirst({
+        where: { phone },
       });
-    } else {
-      await this.prisma.pendingEmailVerification.upsert({
-        where: { email: phone },
-        update: {
-          code: otp,
-          verified: false,
-          expiresAt: expiry,
-        },
-        create: {
-          email: phone,
-          code: otp,
-          verified: false,
-          expiresAt: expiry,
-        },
-      });
+
+      const otp = this.generateOtpCode();
+      const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+      if (user) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            whatsappCode: otp,
+            whatsappCodeExpiry: expiry,
+          },
+        });
+      } else {
+        await this.prisma.pendingEmailVerification.upsert({
+          where: { email: phone },
+          update: {
+            code: otp,
+            verified: false,
+            expiresAt: expiry,
+          },
+          create: {
+            email: phone,
+            code: otp,
+            verified: false,
+            expiresAt: expiry,
+          },
+        });
+      }
+
+      await this.sendSmsOtp(phone, `URCO: votre code de verification est ${otp}. Expire dans 15 minutes.`);
+
+      return { message: 'Verification code sent by SMS', pending: !user };
+    } catch (error: any) {
+      this.logger.error('Failed to resend verification code', error?.stack || String(error));
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // Prisma: table/column missing in production schema (migration not applied)
+      if (error?.code === 'P2021' || error?.code === 'P2022') {
+        throw new BadRequestException(
+          'OTP storage table is missing on server. Run Prisma migrations on production database.',
+        );
+      }
+
+      throw new BadRequestException('Unable to send verification code at the moment');
     }
-
-    await this.sendSmsOtp(phone, `URCO: votre code de verification est ${otp}. Expire dans 15 minutes.`);
-
-    return { message: 'Verification code sent by SMS', pending: !user };
   }
 
   async sendWhatsAppCode(phone: string) {
@@ -435,36 +459,45 @@ export class AuthService {
     const getUrl = `https://www.symtel.biz/fr/index.php?${getParams.toString()}`;
     const postUrl = 'https://www.symtel.biz/fr/index.php?mod=cgibin&page=2';
 
-    const getResponse = await fetch(getUrl, {
-      method: 'GET',
-    });
-    const getText = await getResponse.text();
+    try {
+      const getResponse = await fetch(getUrl, {
+        method: 'GET',
+      });
+      const getText = await getResponse.text();
 
-    if (getResponse.ok) {
-      this.logger.log(`SMS OTP sent to ${phone} via SYMTEL GET`);
-      return;
+      if (getResponse.ok) {
+        this.logger.log(`SMS OTP sent to ${phone} via SYMTEL GET`);
+        return;
+      }
+
+      this.logger.warn(
+        `SYMTEL GET failed (${getResponse.status}). Falling back to POST. Response: ${getText}`,
+      );
+
+      const postBody = new URLSearchParams(payload);
+      const postResponse = await fetch(postUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: postBody.toString(),
+      });
+      const postText = await postResponse.text();
+
+      if (!postResponse.ok) {
+        this.logger.error(`SYMTEL SMS error (${postResponse.status}): ${postText}`);
+        throw new BadRequestException('Unable to send SMS OTP');
+      }
+
+      this.logger.log(`SMS OTP sent to ${phone} via SYMTEL POST`);
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.logger.error(`SYMTEL transport error while sending OTP to ${phone}`, error?.stack || String(error));
+      throw new BadGatewayException('SMS gateway is unreachable from server');
     }
-
-    this.logger.warn(
-      `SYMTEL GET failed (${getResponse.status}). Falling back to POST. Response: ${getText}`,
-    );
-
-    const postBody = new URLSearchParams(payload);
-    const postResponse = await fetch(postUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: postBody.toString(),
-    });
-    const postText = await postResponse.text();
-
-    if (!postResponse.ok) {
-      this.logger.error(`SYMTEL SMS error (${postResponse.status}): ${postText}`);
-      throw new BadRequestException('Unable to send SMS OTP');
-    }
-
-    this.logger.log(`SMS OTP sent to ${phone} via SYMTEL POST`);
   }
 
   private async sendPasswordResetEmail(email: string, code: string) {
