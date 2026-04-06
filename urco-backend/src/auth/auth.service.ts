@@ -460,6 +460,17 @@ export class AuthService {
     throw new BadRequestException('Invalid phone number format');
   }
 
+  private isSymtelBusinessSuccess(responseText: string): boolean {
+    const hasOkCode = /<reponse\s+code=["']OK["']/i.test(responseText);
+    const hasSuccessPrefix = /\b0\s*:/i.test(responseText);
+    return hasOkCode && hasSuccessPrefix;
+  }
+
+  private truncateProviderResponse(responseText: string, max = 350): string {
+    const compact = responseText.replace(/\s+/g, ' ').trim();
+    return compact.length > max ? `${compact.slice(0, max)}...` : compact;
+  }
+
   private async sendSmsOtp(phone: string, content: string) {
     const user = this.configService.get<string>('SYMTEL_USER');
     const password = this.configService.get<string>('SYMTEL_PASSWORD');
@@ -471,56 +482,53 @@ export class AuthService {
     }
 
     const normalizedPhone = this.normalizePhoneForSms(phone);
+    const phoneCandidates = Array.from(
+      new Set([normalizedPhone.replace(/^\+/, ''), normalizedPhone]),
+    );
 
     const md5Password = createHash('md5').update(password).digest('hex');
-    const payload = {
-      user,
-      code: md5Password,
-      title,
-      phone: normalizedPhone,
-      content,
-    };
-
-    const getParams = new URLSearchParams({
-      mod: 'cgibin',
-      page: '2',
-      ...payload,
-    });
-
-    const getUrl = `https://www.symtel.biz/fr/index.php?${getParams.toString()}`;
     const postUrl = 'https://www.symtel.biz/fr/index.php?mod=cgibin&page=2';
 
     try {
-      const getResponse = await fetch(getUrl, {
-        method: 'GET',
-      });
-      const getText = await getResponse.text();
+      for (const phoneForProvider of phoneCandidates) {
+        const payload = {
+          user,
+          code: md5Password,
+          title,
+          phone: phoneForProvider,
+          content,
+        };
 
-      if (getResponse.ok) {
-        this.logger.log(`SYMTEL GET accepted SMS for ${normalizedPhone}. Response: ${getText}`);
-        return;
+        const postBody = new URLSearchParams(payload);
+        const postResponse = await fetch(postUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: postBody.toString(),
+        });
+        const postText = await postResponse.text();
+
+        if (!postResponse.ok) {
+          this.logger.warn(
+            `SYMTEL POST HTTP ${postResponse.status} for ${phoneForProvider}. Response: ${this.truncateProviderResponse(postText)}`,
+          );
+          continue;
+        }
+
+        if (this.isSymtelBusinessSuccess(postText)) {
+          this.logger.log(
+            `SYMTEL accepted SMS for ${phoneForProvider}. Response: ${this.truncateProviderResponse(postText)}`,
+          );
+          return;
+        }
+
+        this.logger.warn(
+          `SYMTEL POST non-success business response for ${phoneForProvider}: ${this.truncateProviderResponse(postText)}`,
+        );
       }
 
-      this.logger.warn(
-        `SYMTEL GET failed (${getResponse.status}). Falling back to POST. Response: ${getText}`,
-      );
-
-      const postBody = new URLSearchParams(payload);
-      const postResponse = await fetch(postUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: postBody.toString(),
-      });
-      const postText = await postResponse.text();
-
-      if (!postResponse.ok) {
-        this.logger.error(`SYMTEL SMS error (${postResponse.status}): ${postText}`);
-        throw new BadRequestException('Unable to send SMS OTP');
-      }
-
-      this.logger.log(`SYMTEL POST accepted SMS for ${normalizedPhone}. Response: ${postText}`);
+      throw new BadRequestException('SMS provider rejected message');
     } catch (error: any) {
       if (error instanceof HttpException) {
         throw error;
