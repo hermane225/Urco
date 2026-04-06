@@ -141,5 +141,49 @@ export class AlertsService {
 
     return matchingAlerts.length;
   }
+
+  async notifyAdminsDriverDocumentsSubmitted(params: {
+    userId: string;
+    isResubmission?: boolean;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: {
+        OR: [{ isAdmin: true }, { role: 'ADMIN' }],
+      },
+      select: { id: true },
+    });
+
+    const payload = {
+      type: 'DRIVER_DOCUMENTS_SUBMITTED',
+      title: 'Documents conducteur a verifier',
+      message: params.isResubmission
+        ? 'Un chauffeur a re-soumis ses documents pour verification.'
+        : 'Un chauffeur a soumis ses documents pour verification.',
+      userId: params.userId,
+      submittedAt: new Date(),
+    };
+
+    for (const admin of admins) {
+      this.alertsGateway.emitAlertPopup(admin.id, payload);
+    }
+
+    return admins.length;
+  }
+
+  async notifyDriverDocumentsReviewResult(params: {
+    userId: string;
+    approved: boolean;
+    details?: string;
+  }) {
+    this.alertsGateway.emitAlertPopup(params.userId, {
+      type: 'DRIVER_DOCUMENTS_REVIEWED',
+      title: params.approved ? 'Documents valides' : 'Documents a corriger',
+      message: params.approved
+        ? 'Vos documents conducteur ont ete valides par l\'admin.'
+        : params.details || 'Certains documents ont ete rejetes. Merci de les mettre a jour.',
+      approved: params.approved,
+      reviewedAt: new Date(),
+    });
+  }
 }
 

@@ -52,6 +52,7 @@ export class RidesService {
     files?: {
       driverLicensePhoto?: Express.Multer.File[];
       carInsurancePhoto?: Express.Multer.File[];
+      vehiclePhoto?: Express.Multer.File[];
     },
   ) {
     const { departureDate, originLat, originLng, destLat, destLng, ...rest } =
@@ -70,6 +71,9 @@ export class RidesService {
       : null;
     const carInsurancePhotoPath = files?.carInsurancePhoto?.[0]
       ? `/uploads/${files.carInsurancePhoto[0].filename}`
+      : null;
+    const vehiclePhotoPath = files?.vehiclePhoto?.[0]
+      ? `/uploads/${files.vehiclePhoto[0].filename}`
       : null;
 
     const rideData: any = {
@@ -90,26 +94,66 @@ export class RidesService {
       rideData.carInsurancePhoto = carInsurancePhotoPath;
     }
 
-    const createdRide = await this.prisma.$transaction(async (tx) => {
+    const ridePayload = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: userId },
-        select: { role: true, roles: true },
+        select: {
+          role: true,
+          roles: true,
+          driverLicense: true,
+          carInsurance: true,
+          idDocumentPhoto: true,
+          driverLicenseVerified: true,
+          carInsuranceVerified: true,
+          idDocumentVerified: true,
+        },
       });
+
+      const ridesCount = await tx.ride.count({ where: { driverId: userId } });
+      const isFirstRide = ridesCount === 0;
+
+      const finalDriverLicense = driverLicensePhotoPath ?? user?.driverLicense ?? null;
+      const finalCarInsurance = carInsurancePhotoPath ?? user?.carInsurance ?? null;
+      const finalVehiclePhoto = vehiclePhotoPath ?? user?.idDocumentPhoto ?? null;
+
+      const missingDocuments: string[] = [];
+      if (!finalDriverLicense) missingDocuments.push('driverLicense');
+      if (!finalCarInsurance) missingDocuments.push('carInsurance');
+      if (!finalVehiclePhoto) missingDocuments.push('vehiclePhoto');
+
+      const uploadedAnyDriverDocument =
+        !!driverLicensePhotoPath || !!carInsurancePhotoPath || !!vehiclePhotoPath;
 
       const nextRoles = new Set(user?.roles || []);
       nextRoles.add(UserRole.DRIVER);
 
+      const userUpdateData: any = {
+        role: UserRole.DRIVER,
+        roles: { set: Array.from(nextRoles) },
+      };
+
+      if (driverLicensePhotoPath) {
+        userUpdateData.driverLicense = driverLicensePhotoPath;
+        userUpdateData.driverLicenseVerified = false;
+      }
+
+      if (carInsurancePhotoPath) {
+        userUpdateData.carInsurance = carInsurancePhotoPath;
+        userUpdateData.carInsuranceVerified = false;
+      }
+
+      if (vehiclePhotoPath) {
+        // Reuse idDocumentPhoto slot as vehicle document photo for now.
+        userUpdateData.idDocumentPhoto = vehiclePhotoPath;
+        userUpdateData.idDocumentVerified = false;
+      }
+
       await tx.user.update({
         where: { id: userId },
-        data: {
-          role: UserRole.DRIVER,
-          roles: { set: Array.from(nextRoles) },
-          driverLicense: driverLicensePhotoPath ?? undefined,
-          carInsurance: carInsurancePhotoPath ?? undefined,
-        },
+        data: userUpdateData,
       });
 
-      return tx.ride.create({
+      const ride = await tx.ride.create({
         data: rideData,
         include: {
           driver: {
@@ -125,7 +169,21 @@ export class RidesService {
           },
         },
       });
+
+      return {
+        ride,
+        isFirstRide,
+        missingDocuments,
+        uploadedAnyDriverDocument,
+        reviewStatus: {
+          driverLicenseVerified: driverLicensePhotoPath ? false : user?.driverLicenseVerified,
+          carInsuranceVerified: carInsurancePhotoPath ? false : user?.carInsuranceVerified,
+          vehiclePhotoVerified: vehiclePhotoPath ? false : user?.idDocumentVerified,
+        },
+      };
     });
+
+    const createdRide = ridePayload.ride;
 
     try {
       await this.alertsService.notifyUsersForRideMatch(createdRide);
@@ -133,7 +191,34 @@ export class RidesService {
       this.logger.error(`Unable to notify alert users for ride ${createdRide.id}`, error as any);
     }
 
-    return this.withPublicMediaUrls(createdRide);
+    if (ridePayload.uploadedAnyDriverDocument) {
+      try {
+        await this.alertsService.notifyAdminsDriverDocumentsSubmitted({
+          userId,
+          isResubmission: !ridePayload.isFirstRide,
+        });
+      } catch (error) {
+        this.logger.error(`Unable to notify admins for driver docs from user ${userId}`, error as any);
+      }
+    }
+
+    const firstRideNeedsDocuments =
+      ridePayload.isFirstRide && ridePayload.missingDocuments.length > 0;
+
+    const rideWithUrls = this.withPublicMediaUrls(createdRide);
+
+    return {
+      ...rideWithUrls,
+      driverDocuments: {
+        firstRide: ridePayload.isFirstRide,
+        missingDocuments: ridePayload.missingDocuments,
+        firstRideNeedsDocuments,
+        reviewStatus: ridePayload.reviewStatus,
+        message: firstRideNeedsDocuments
+          ? 'Publie avec succes. Ajoutez vos documents conducteur pour verification admin.'
+          : 'Publie avec succes. Vos documents seront verifies par l\'admin si necessaire.',
+      },
+    };
   }
 
   async getRides(filters?: {

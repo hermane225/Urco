@@ -6,12 +6,14 @@ import { ListUsersQuery, UpdateUserRolesDto } from './dto/admin-users.dto';
 import { Prisma, UserRole } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AlertsService } from '../alerts/alerts.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private alertsService: AlertsService,
   ) {}
 
   async getProfile(userId: string) {
@@ -188,6 +190,26 @@ export class UsersService {
       where: { id: userId },
       data: updateData,
     });
+
+    const docsReviewed =
+      dto.idDocumentVerified !== undefined ||
+      dto.driverLicenseVerified !== undefined ||
+      dto.carInsuranceVerified !== undefined;
+
+    if (docsReviewed) {
+      const docsApproved =
+        updatedUser.idDocumentVerified &&
+        updatedUser.driverLicenseVerified &&
+        updatedUser.carInsuranceVerified;
+
+      await this.alertsService.notifyDriverDocumentsReviewResult({
+        userId: updatedUser.id,
+        approved: !!docsApproved,
+        details: docsApproved
+          ? undefined
+          : 'Certains documents conducteur n\'ont pas ete valides. Merci de les mettre a jour puis re-soumettre.',
+      });
+    }
 
     return this.sanitizeUser(updatedUser);
   }

@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { existsSync, mkdirSync } from 'fs';
 import { extname, join } from 'path';
 import { RidesService } from './rides.service';
 import { CreateRideDto, UpdateRideDto } from './dto/rides.dto';
@@ -38,11 +39,16 @@ export class RidesController {
       [
         { name: 'driverLicensePhoto', maxCount: 1 },
         { name: 'carInsurancePhoto', maxCount: 1 },
+        { name: 'vehiclePhoto', maxCount: 1 },
       ],
       {
         storage: diskStorage({
           destination: (req, file, cb) => {
-            cb(null, join(process.cwd(), 'uploads'));
+            const uploadsDir = join(process.cwd(), 'uploads');
+            if (!existsSync(uploadsDir)) {
+              mkdirSync(uploadsDir, { recursive: true });
+            }
+            cb(null, uploadsDir);
           },
           filename: (req, file, cb) => {
             const randomName = Array(32)
@@ -62,6 +68,7 @@ export class RidesController {
     files?: {
       driverLicensePhoto?: Express.Multer.File[];
       carInsurancePhoto?: Express.Multer.File[];
+      vehiclePhoto?: Express.Multer.File[];
     },
   ) {
     const user = req.user as any;
