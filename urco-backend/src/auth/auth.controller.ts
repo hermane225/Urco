@@ -1,7 +1,19 @@
-import { Controller, Post, Body, Get, UseGuards, Res, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Res,
+  Req,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { existsSync, mkdirSync } from 'fs';
 import { extname, join } from 'path';
 import type { Response, Request } from 'express';
 import { AuthService } from './auth.service';
@@ -28,7 +40,11 @@ export class AuthController {
     FileInterceptor('avatar', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          cb(null, join(process.cwd(), 'uploads'));
+          const uploadsDir = join(process.cwd(), 'uploads');
+          if (!existsSync(uploadsDir)) {
+            mkdirSync(uploadsDir, { recursive: true });
+          }
+          cb(null, uploadsDir);
         },
         filename: (req, file, cb) => {
           const randomName = Array(32)
@@ -38,6 +54,16 @@ export class AuthController {
           cb(null, `${randomName}${extname(file.originalname)}`);
         },
       }),
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+      },
+      fileFilter: (req, file, cb) => {
+        if (!file.mimetype?.startsWith('image/')) {
+          cb(new BadRequestException('Avatar must be a valid image file'), false);
+          return;
+        }
+        cb(null, true);
+      },
     }),
   )
   @ApiOperation({ summary: 'Register a new user' })
@@ -47,6 +73,10 @@ export class AuthController {
     @Body() signupDto: SignupDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    if (!file) {
+      throw new BadRequestException('Avatar is required for registration');
+    }
+
     return this.authService.signup(signupDto, file);
   }
 

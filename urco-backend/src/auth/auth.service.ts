@@ -25,88 +25,108 @@ export class AuthService {
   ) {}
 
   async signup(signupDto: SignupDto, file?: Express.Multer.File) {
-    const {
-      email,
-      username,
-      password,
-      firstName,
-      lastName,
-      phone,
-      gender,
-      dateOfBirth,
-      role,
-    } = signupDto;
-    const userRole = role || 'PASSENGER';
-    const isAdminUser = String(userRole) === 'ADMIN';
-    const avatarPath = file ? `/uploads/${file.filename}` : null;
-
-    if (!phone) {
-      throw new BadRequestException('Phone number is required for registration');
-    }
-
-    // Check if user exists
-    const existingUser = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { username }, { phone }],
-      },
-    });
-
-    if (existingUser) {
-      throw new BadRequestException('Email, username or phone already exists');
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Check if phone was previously verified through pending OTP verification
-    const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
-      where: { email: phone },
-    });
-
-    if (
-      !pendingVerification ||
-      !pendingVerification.verified ||
-      pendingVerification.expiresAt < new Date()
-    ) {
-      throw new BadRequestException('Phone number not verified. Please verify OTP before signup.');
-    }
-
-    // Create user
-    const user = await this.prisma.user.create({
-      data: {
-        username,
+    try {
+      const {
         email,
-        password: hashedPassword,
+        username,
+        password,
         firstName,
         lastName,
         phone,
         gender,
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-        role: userRole,
-        roles: {
-          set: [userRole]
+        dateOfBirth,
+        role,
+      } = signupDto;
+      const userRole = role || 'PASSENGER';
+      const isAdminUser = String(userRole) === 'ADMIN';
+      const avatarPath = file ? `/uploads/${file.filename}` : null;
+
+      if (!phone) {
+        throw new BadRequestException('Phone number is required for registration');
+      }
+
+      // Check if user exists
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
+          OR: [{ email }, { username }, { phone }],
         },
-        isAdmin: isAdminUser,
-        avatar: avatarPath,
-        whatsappVerified: true,
-        emailVerified: true,
-        verified: true,
-      },
-    });
+      });
 
-    // Clean up pending phone verification record used during signup OTP flow
-    await this.prisma.pendingEmailVerification.delete({
-      where: { email: phone },
-    });
+      if (existingUser) {
+        throw new BadRequestException('Email, username or phone already exists');
+      }
 
-    // Generate token
-    const token = this.generateToken(user.id, user.email);
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-    return {
-      user: this.sanitizeUser(user),
-      token,
-      phoneWasPreVerified: true,
-    };
+      // Check if phone was previously verified through pending OTP verification
+      const pendingVerification = await this.prisma.pendingEmailVerification.findUnique({
+        where: { email: phone },
+      });
+
+      if (
+        !pendingVerification ||
+        !pendingVerification.verified ||
+        pendingVerification.expiresAt < new Date()
+      ) {
+        throw new BadRequestException('Phone number not verified. Please verify OTP before signup.');
+      }
+
+      // Create user
+      const user = await this.prisma.user.create({
+        data: {
+          username,
+          email,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          phone,
+          gender,
+          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+          role: userRole,
+          roles: {
+            set: [userRole],
+          },
+          isAdmin: isAdminUser,
+          avatar: avatarPath,
+          whatsappVerified: true,
+          emailVerified: true,
+          verified: true,
+        },
+      });
+
+      // Clean up pending phone verification record used during signup OTP flow
+      await this.prisma.pendingEmailVerification.deleteMany({
+        where: { email: phone },
+      });
+
+      // Generate token
+      const token = this.generateToken(user.id, user.email);
+
+      return {
+        user: this.sanitizeUser(user),
+        token,
+        phoneWasPreVerified: true,
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      this.logger.error('Signup failed', error?.stack || String(error));
+
+      if (error?.code === 'P2002') {
+        throw new BadRequestException('Email, username or phone already exists');
+      }
+
+      if (error?.code === 'P2021' || error?.code === 'P2022') {
+        throw new BadRequestException(
+          'Signup storage is not fully initialized on server. Run Prisma schema sync.',
+        );
+      }
+
+      throw new BadRequestException('Unable to create account at the moment');
+    }
   }
 
   async login(loginDto: LoginDto) {
