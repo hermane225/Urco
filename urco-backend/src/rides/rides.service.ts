@@ -989,5 +989,122 @@ export class RidesService {
 
     return cloned as T;
   }
+
+  // ============== ADMIN METHODS ==============
+
+  async getActiveRidesAdmin(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const where = {
+      status: 'ACTIVE' as const,
+    };
+
+    const [rides, total] = await Promise.all([
+      this.prisma.ride.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          driver: {
+            select: {
+              id: true,
+              username: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              phone: true,
+              rating: true,
+              verified: true,
+            },
+          },
+          bookings: {
+            select: {
+              id: true,
+              status: true,
+              passengerId: true,
+              passenger: {
+                select: {
+                  id: true,
+                  username: true,
+                  firstName: true,
+                  lastName: true,
+                  avatar: true,
+                  phone: true,
+                  rating: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { departureDate: 'asc' },
+      }),
+      this.prisma.ride.count({ where: where as any }),
+    ]);
+
+    const sanitizedRides = rides.map((ride) => this.withPublicMediaUrls(ride));
+
+    return {
+      data: sanitizedRides,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getRideFullDetails(rideId: string) {
+    const ride = await this.prisma.ride.findUnique({
+      where: { id: rideId },
+      include: {
+        driver: {
+          select: {
+            id: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            avatar: true,
+            rating: true,
+            verified: true,
+            idDocumentVerified: true,
+            driverLicenseVerified: true,
+            carInsuranceVerified: true,
+            ridesCompleted: true,
+          },
+        },
+        bookings: {
+          include: {
+            passenger: {
+              select: {
+                id: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+                avatar: true,
+                rating: true,
+                verified: true,
+                ridesCompleted: true,
+              },
+            },
+          },
+        },
+        trackings: {
+          orderBy: { timestamp: 'desc' },
+          take: 50,
+        },
+      },
+    });
+
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    return this.withPublicMediaUrls(ride);
+  }
 }
 

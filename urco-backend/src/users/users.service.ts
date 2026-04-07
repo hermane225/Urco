@@ -320,6 +320,205 @@ export class UsersService {
     };
   }
 
+  // ============== ADMIN METHODS ==============
+
+  async listUsers(query: ListUsersQuery) {
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (query.role) {
+      where.roles = {
+        has: query.role,
+      };
+    }
+
+    if (query.pendingValidation !== undefined) {
+      if (query.pendingValidation) {
+        where.OR = [
+          { idDocumentVerified: false },
+          { driverLicenseVerified: false },
+          { carInsuranceVerified: false },
+        ];
+      }
+    }
+
+    if (query.search) {
+      where.OR = [
+        { username: { contains: query.search, mode: 'insensitive' } },
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          avatar: true,
+          roles: true,
+          verified: true,
+          idDocumentVerified: true,
+          driverLicenseVerified: true,
+          carInsuranceVerified: true,
+          rating: true,
+          ridesCompleted: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    const sanitizedUsers = users.map((user) => ({
+      ...user,
+      avatarUrl: this.toPublicFileUrl(user.avatar),
+    }));
+
+    return {
+      data: sanitizedUsers,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async deleteUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Supprimer les booking de l'utilisateur
+    await this.prisma.booking.deleteMany({
+      where: {
+        OR: [{ passengerId: userId }, { ride: { driverId: userId } }],
+      },
+    });
+
+    // Supprimer les rides de l'utilisateur complètement
+    const ridesDeleted = await this.prisma.rideEvent.deleteMany({
+      where: { ride: { driverId: userId } },
+    });
+
+    const ridesDeleted2 = await this.prisma.ride.deleteMany({
+      where: { driverId: userId },
+    });
+
+    // Enfin, supprimer l'utilisateur
+    const deletedUser = await this.prisma.user.delete({
+      where: { id: userId },
+    });
+
+    return {
+      message: 'User deleted successfully',
+      deletedUser: this.sanitizeUser(deletedUser),
+    };
+  }
+
+  async updateUserRoles(userId: string, dto: UpdateUserRolesDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // S'assurer que les rôles fournis sont valides
+    const validRoles = Object.values(UserRole);
+    for (const role of dto.roles) {
+      if (!validRoles.includes(role)) {
+        throw new BadRequestException(`Invalid role: ${role}`);
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        roles: {
+          set: dto.roles,
+        },
+        role: dto.roles[0] || UserRole.PASSENGER,
+      },
+    });
+
+    return this.sanitizeUser(updatedUser);
+  }
+
+  async getPendingDrivers(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const where = {
+      roles: {
+        has: UserRole.DRIVER,
+      },
+      driverLicenseVerified: false,
+    };
+
+    const [drivers, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          avatar: true,
+          driverLicense: true,
+          carInsurance: true,
+          idDocumentPhoto: true,
+          idDocumentVerified: true,
+          driverLicenseVerified: true,
+          carInsuranceVerified: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    const sanitizedDrivers = drivers.map((driver) => ({
+      ...driver,
+      avatarUrl: this.toPublicFileUrl(driver.avatar),
+      driverLicenseUrl: this.toPublicFileUrl(driver.driverLicense),
+      carInsuranceUrl: this.toPublicFileUrl(driver.carInsurance),
+      idDocumentPhotoUrl: this.toPublicFileUrl(driver.idDocumentPhoto),
+    }));
+
+    return {
+      data: sanitizedDrivers,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   private toPublicFileUrl(filePath?: string | null) {
     if (!filePath) {
       return null;

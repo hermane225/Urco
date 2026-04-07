@@ -4,18 +4,21 @@ import {
   Get,
   Put,
   Post,
+  Delete,
   Body,
   Param,
   UseGuards,
   Req,
   UploadedFile,
   UseInterceptors,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { UsersService } from './users.service';
 import { UpdateProfileDto, UploadDocumentDto, VerifyUserDto, RateDriverDto } from './dto/users.dto';
+import { ListUsersQuery, UpdateUserRolesDto } from './dto/admin-users.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request } from 'express';
 
@@ -122,5 +125,75 @@ export class UsersController {
       throw new BadRequestException('Admin access required');
     }
     return this.usersService.verifyUser(userId, dto);
+  }
+
+  // ============== ADMIN ROUTES ==============
+
+  @Get('admin/users')
+  async listUsers(@Req() req: Request, @Query() query: ListUsersQuery) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.usersService.listUsers(query);
+  }
+
+  @Delete('admin/users/:userId')
+  async deleteUser(@Req() req: Request, @Param('userId') userId: string) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.usersService.deleteUser(userId);
+  }
+
+  @Put('admin/users/:userId/roles')
+  async updateUserRoles(
+    @Req() req: Request,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserRolesDto,
+  ) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.usersService.updateUserRoles(userId, dto);
+  }
+
+  @Get('admin/drivers/pending')
+  async getPendingDrivers(
+    @Req() req: Request,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.usersService.getPendingDrivers(parseInt(page || '1'), parseInt(limit || '20'));
   }
 }

@@ -12,6 +12,7 @@ import {
   Req,
   UseInterceptors,
   UploadedFiles,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -231,6 +232,47 @@ export class RidesController {
   async deleteRide(@Req() req: Request, @Param('rideId') rideId: string) {
     const user = req.user as any;
     return this.ridesService.deleteRide(rideId, user.id);
+  }
+
+  // ============== ADMIN ROUTES ==============
+
+  @Get('admin/rides/active')
+  @UseGuards(JwtAuthGuard)
+  async getActiveRidesAdmin(
+    @Req() req: Request,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.ridesService.getActiveRidesAdmin(
+      parseInt(page || '1'),
+      parseInt(limit || '20'),
+    );
+  }
+
+  @Get('admin/rides/:rideId/full')
+  @UseGuards(JwtAuthGuard)
+  async getRideFullDetails(@Req() req: Request, @Param('rideId') rideId: string) {
+    const currentUser = req.user as any;
+    const hasAdminAccess =
+      currentUser?.isAdmin ||
+      currentUser?.role === 'ADMIN' ||
+      (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
+
+    if (!hasAdminAccess) {
+      throw new BadRequestException('Admin access required');
+    }
+
+    return this.ridesService.getRideFullDetails(rideId);
   }
 }
 
