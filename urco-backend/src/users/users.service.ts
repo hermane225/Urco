@@ -323,8 +323,8 @@ export class UsersService {
   // ============== ADMIN METHODS ==============
 
   async listUsers(query: ListUsersQuery) {
-    const page = query.page || 1;
-    const limit = query.limit || 20;
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Number(query.limit) || 20);
     const skip = (page - 1) * limit;
 
     const where: any = {};
