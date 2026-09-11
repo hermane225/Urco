@@ -29,7 +29,12 @@ export class RidesService {
   ) {}
 
   private async reverseGeocode(lat: number, lng: number): Promise<string> {
-    const token = this.configService.getOrThrow('GOOGLE_MAPS_API_KEY') as string;
+    const token = this.configService.get<string>('GOOGLE_MAPS_API_KEY');
+    if (!token) {
+      throw new BadRequestException(
+        'Address is required when no reverse-geocoding key is configured',
+      );
+    }
     const client = new Client({});
     const response = await client.reverseGeocode({
       params: {
@@ -58,11 +63,13 @@ export class RidesService {
     const { departureDate, originLat, originLng, destLat, destLng, ...rest } =
       createRideDto;
 
-    // Reverse geocode if lat/lng provided without address
-    if (originLat !== undefined && originLng !== undefined) {
+    // Reverse geocode only when the client sent coordinates but no address
+    // string — the mobile app always sends both, so this only runs as a
+    // fallback (and avoids requiring GOOGLE_MAPS_API_KEY on the happy path).
+    if (!rest.origin && originLat !== undefined && originLng !== undefined) {
       rest.origin = await this.reverseGeocode(originLat, originLng);
     }
-    if (destLat !== undefined && destLng !== undefined) {
+    if (!rest.destination && destLat !== undefined && destLng !== undefined) {
       rest.destination = await this.reverseGeocode(destLat, destLng);
     }
 
