@@ -2,8 +2,14 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
+
+// Photos/documents can be sizeable (phone camera photos, or base64-encoded
+// images embedded in a JSON body). Nest's default body-parser limit is
+// 100kb, which silently produces a 413 for any real upload — raise it here.
+const BODY_SIZE_LIMIT = '20mb';
 
 function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -28,7 +34,11 @@ async function listenWithFallback(app: any, initialPort: number, maxAttempts = 1
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  app.use(json({ limit: BODY_SIZE_LIMIT }));
+  app.use(urlencoded({ extended: true, limit: BODY_SIZE_LIMIT }));
 
   // Serve uploaded files as static assets
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
@@ -71,6 +81,9 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
+      // multipart/form-data fields always arrive as strings; coerce them to
+      // the DTO's declared types (numbers, booleans) instead of rejecting.
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 

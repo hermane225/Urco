@@ -104,6 +104,10 @@ server {
     listen 80;
     server_name api.urco.com;
 
+    # Default is 1M, which rejects photo/document uploads with a 413
+    # before they ever reach the Node app.
+    client_max_body_size 20M;
+
     location / {
         proxy_pass http://localhost:3002;
         proxy_http_version 1.1;

@@ -54,6 +54,9 @@ export class UsersController {
           cb(null, `${randomName}${extname(file.originalname)}`);
         },
       }),
+      limits: {
+        fileSize: 8 * 1024 * 1024,
+      },
     }),
   )
   async uploadDocument(
