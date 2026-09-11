@@ -56,7 +56,11 @@ export class UsersService {
 
     const updateData: any = {};
 
-    switch (documentType) {
+    // Accept both the canonical camelCase values and the snake_case values
+    // some client screens still pass directly (e.g. "id_document").
+    const normalizedType = documentType?.trim().replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+    switch (normalizedType) {
       case 'avatar':
         updateData.avatar = filePath;
         break;
@@ -73,7 +77,7 @@ export class UsersService {
         updateData.carInsurance = filePath;
         break;
       default:
-        throw new BadRequestException('Invalid document type');
+        throw new BadRequestException(`Invalid document type: "${documentType}"`);
     }
 
     const updatedUser = await this.prisma.user.update({
