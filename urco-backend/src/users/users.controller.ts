@@ -9,11 +9,11 @@ import {
   Param,
   UseGuards,
   Req,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   Query,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { UsersService } from './users.service';
@@ -41,7 +41,9 @@ export class UsersController {
 
   @Post('upload-document')
   @UseInterceptors(
-    FileInterceptor('file', {
+    // The mobile app's multipart field name varies by call site (e.g. "document"
+    // instead of "file"), so accept any field name rather than a fixed one.
+    AnyFilesInterceptor({
       storage: diskStorage({
         destination: (req, file, cb) => {
           cb(null, join(process.cwd(), 'uploads'));
@@ -61,10 +63,14 @@ export class UsersController {
   )
   async uploadDocument(
     @Req() req: Request,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
     @Body() body: UploadDocumentDto,
   ) {
     const user = req.user as any;
+    const file = files?.[0];
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
     return this.usersService.uploadDocument(user.id, file, body.documentType);
   }
 
