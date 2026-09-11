@@ -39,10 +39,32 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // Enable CORS
-  app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true,
-  });
+  // CORS_ORIGIN can be "*", or a comma-separated list of allowed origins.
+  // Local dev origins (Expo web) are always allowed in addition, so testing
+  // the web build against this production API never gets CORS-blocked.
+  const DEV_ORIGINS = ['http://localhost:8081', 'http://localhost:19006'];
+  const corsOriginEnv = (process.env.CORS_ORIGIN || '*').trim();
+
+  if (corsOriginEnv === '*') {
+    app.enableCors({
+      origin: true,
+      credentials: true,
+    });
+  } else {
+    const allowedOrigins = Array.from(
+      new Set([
+        ...corsOriginEnv
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+        ...DEV_ORIGINS,
+      ]),
+    );
+    app.enableCors({
+      origin: allowedOrigins,
+      credentials: true,
+    });
+  }
 
   // Global validation pipe
   app.useGlobalPipes(
