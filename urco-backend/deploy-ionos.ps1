@@ -18,7 +18,8 @@ param(
     [string]$SmtpFrom = ""
 )
 
-$ProjectDir = "c:\Users\hermane\mano\Urco\urco-backend"
+# Dossier du script = racine du projet, quel que soit l'emplacement du clone
+$ProjectDir = $PSScriptRoot
 $Archive = "$env:TEMP\urco-backend.tar.gz"
 $ScriptDir = "$env:TEMP\urco-scripts"
 $AppPort = "3002"
@@ -113,10 +114,10 @@ Write-BashScript "$ScriptDir\extract.sh" @(
     "rm /tmp/urco-backend.tar.gz",
     "echo '--- Installation des dependances (dev inclus pour le build) ---'",
     "npm install",
+    "echo '--- Generation du client Prisma (avant le build : les types des modeles en dependent) ---'",
+    "npx prisma generate",
     "echo '--- Build NestJS ---'",
     "npm run build",
-    "echo '--- Generation du client Prisma ---'",
-    "npx prisma generate",
     "echo '--- Suppression des devDependencies ---'",
     "npm prune --omit=dev",
     "echo 'Build termine.'"
