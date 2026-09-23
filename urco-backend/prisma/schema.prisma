@@ -74,13 +74,15 @@ model User {
 
   ridesAsDriver               Ride[]
   bookingsAsPassenger         Booking[]
-  conversationsAsParticipant1 Conversation[] @relation("Participant1")
-  conversationsAsParticipant2 Conversation[] @relation("Participant2")
+  conversationsAsParticipant1 Conversation[]      @relation("Participant1")
+  conversationsAsParticipant2 Conversation[]      @relation("Participant2")
   messages                    Message[]
   alerts                      Alert[]
   liveLocations               LiveLocation[]
   rideEvents                  RideEvent[]
   rideTrackings               RideTracking[]
+  companiesOwned              Company[]           @relation("CompanyOwner")
+  ticketReservations          TicketReservation[]
 }
 
 model Ride {
@@ -165,17 +167,17 @@ model Message {
 }
 
 model Alert {
-  id                 String   @id @default(uuid())
-  userId             String
-  origin             String
-  destination        String
-  desiredDate        DateTime
-  desiredPrice       Float?
-  departureLocation  String?
-  arrivalLocation    String?
-  active             Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(uuid())
+  userId            String
+  origin            String
+  destination       String
+  desiredDate       DateTime
+  desiredPrice      Float?
+  departureLocation String?
+  arrivalLocation   String?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -247,10 +249,247 @@ model RideTracking {
 model RideRoute {
   id        String   @id @default(uuid())
   rideId    String   @unique
-  points    Json     // [[lat,lng], ...] polyline
-  distance  Float    // km
-  duration  Int      // seconds
+  points    Json // [[lat,lng], ...] polyline
+  distance  Float // km
+  duration  Int // seconds
   createdAt DateTime @default(now())
 
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// Module Billetterie (compagnies de transport)
+// Totalement indépendant du covoiturage (Ride / Booking / Payment).
+// Montants en XOF entiers.
+// ============================================================================
+
+enum CompanyStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum TripStatus {
+  SCHEDULED
+  CANCELLED
+  DEPARTED
+  COMPLETED
+}
+
+enum TicketReservationStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  USED
+}
+
+enum TicketPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum TicketPaymentMethod {
+  ORANGE_MONEY
+  MTN_MONEY
+  MOOV_MONEY
+  WAVE
+  CASH
+  CARD
+}
+
+enum TicketingActorType {
+  USER
+  COMPANY_ADMIN
+  STATION_AGENT
+  INSPECTOR
+  PLATFORM_ADMIN
+  SYSTEM
+}
+
+model Company {
+  id                    String        @id @default(uuid())
+  ownerId               String
+  name                  String        @unique
+  logo                  String
+  description           String?
+  email                 String?
+  phone                 String?
+  whatsapp              String?
+  coveredCities         String[]      @default([])
+  status                CompanyStatus @default(PENDING)
+  // Délai (minutes avant départ) en deçà duquel un trajet n'est plus modifiable
+  tripEditCutoffMinutes Int           @default(60)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  owner      User              @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  stations   Station[]
+  inspectors TicketInspector[]
+
+  @@index([ownerId])
+}
+
+model Station {
+  id           String   @id @default(uuid())
+  companyId    String
+  name         String
+  city         String
+  address      String
+  lat          Float?
+  lng          Float?
+  openingHours String?
+  phone        String?
+  email        String?
+  // Identifiants de connexion de l'agent de gare
+  loginId      String   @unique
+  passwordHash String
+  // Incrémenté à chaque réinitialisation : invalide les sessions existantes
+  tokenVersion Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  trips          Trip[]             @relation("TripDeparture")
+  arrivals       Trip[]             @relation("TripArrival")
+  ticketPayments TicketPayment[]
+  validations    TicketValidation[]
+
+  @@index([companyId])
+  @@index([city])
+}
+
+model Trip {
+  id               String     @id @default(uuid())
+  stationId        String
+  arrivalStationId String?
+  destinationCity  String
+  departureAt      DateTime
+  vehicleType      String
+  totalSeats       Int
+  availableSeats   Int
+  price            Int
+  conditions       String?
+  status           TripStatus @default(SCHEDULED)
+  reminderSentAt   DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  station        Station             @relation("TripDeparture", fields: [stationId], references: [id], onDelete: Cascade)
+  arrivalStation Station?            @relation("TripArrival", fields: [arrivalStationId], references: [id], onDelete: SetNull)
+  reservations   TicketReservation[]
+
+  @@index([stationId, departureAt])
+  @@index([destinationCity, departureAt])
+}
+
+model TicketReservation {
+  id             String                  @id @default(uuid())
+  tripId         String
+  userId         String?
+  // Code URCO-XXXXXX, attribué uniquement après validation du paiement
+  code           String?                 @unique
+  seats          Int
+  totalPrice     Int
+  passengerName  String
+  passengerPhone String
+  passengerEmail String?
+  status         TicketReservationStatus @default(PENDING_PAYMENT)
+  expiresAt      DateTime?
+  confirmedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  trip        Trip               @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payment     TicketPayment?
+  validations TicketValidation[]
+
+  @@index([tripId, status])
+  @@index([userId])
+  @@index([status, expiresAt])
+}
+
+model TicketPayment {
+  id                String              @id @default(uuid())
+  reservationId     String              @unique
+  // Gare émettrice : permet l'historique des transactions par gare
+  stationId         String
+  amount            Int
+  currency          String              @default("XOF")
+  method            TicketPaymentMethod
+  provider          String
+  providerReference String?             @unique
+  payerPhone        String?
+  status            TicketPaymentStatus @default(PENDING)
+  paidAt            DateTime?
+  rawResponse       Json?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  reservation TicketReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  station     Station           @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, status])
+}
+
+model TicketInspector {
+  id           String   @id @default(uuid())
+  companyId    String
+  name         String
+  phone        String?
+  email        String?
+  loginId      String   @unique
+  passwordHash String
+  // Incrémenté à chaque réinitialisation : invalide les sessions existantes
+  tokenVersion Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  validations TicketValidation[]
+
+  @@index([companyId])
+}
+
+// Chaque contrôle de billet (agent de gare ou contrôleur)
+model TicketValidation {
+  id            String   @id @default(uuid())
+  reservationId String
+  stationId     String?
+  inspectorId   String?
+  // VALID | ALREADY_USED | NOT_CONFIRMED | WRONG_COMPANY ...
+  result        String
+  boarded       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  reservation TicketReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  station     Station?          @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  inspector   TicketInspector?  @relation(fields: [inspectorId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId])
+  @@index([inspectorId, createdAt])
+  @@index([stationId, createdAt])
+}
+
+// Historisation des actions (anti-fraude)
+model TicketingAuditLog {
+  id        String             @id @default(uuid())
+  actorType TicketingActorType
+  actorId   String?
+  companyId String?
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  createdAt DateTime           @default(now())
+
+  @@index([companyId, createdAt])
+  @@index([entity, entityId])
 }

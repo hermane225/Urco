@@ -9,6 +9,7 @@ import { AlertsModule } from './alerts/alerts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { LocationsModule } from './locations/locations.module';
 import { PaymentsModule } from './payments/payments.module';
+import { TicketingModule } from './ticketing/ticketing.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -26,6 +27,7 @@ import { AppService } from './app.service';
     AlertsModule,
     LocationsModule,
     PaymentsModule,
+    TicketingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
